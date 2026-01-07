@@ -72,7 +72,7 @@ export default function AITools() {
           positionEnd: currentPosition + duration,
           includeInMerge: true,
           playbackSpeed: 1,
-          volume: 100,
+          volume: 50, // 0 dB default (50 = 0 dB, 0-50 maps to -60 to 0 dB, 50-100 maps to 0 to +12 dB)
           zIndex: 0,
           x: x,
           y: y,
@@ -100,7 +100,7 @@ export default function AITools() {
         positionEnd: totalDuration,
         includeInMerge: true,
         playbackSpeed: 1,
-        volume: 100,
+        volume: 50, // 0 dB default (50 = 0 dB, 0-50 maps to -60 to 0 dB, 50-100 maps to 0 to +12 dB)
         zIndex: 0,
         src: URL.createObjectURL(file),
       };

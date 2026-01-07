@@ -8,6 +8,7 @@ import GenerateVideoButton from "./render/GenerateVideoButton";
 import { Trash2, Plus, Sparkles } from "lucide-react";
 import { DEFAULT_TEXT_STYLE } from "@/app/constants";
 import { calculateVideoFit } from "@/app/utils/videoDimensions";
+import MediaProperties from "./PropertiesSection/MediaProperties";
 
 export default function RightSidebar() {
     const { textElements, mediaFiles, activeElement, activeElementIndex } = useAppSelector((state) => state.projectState);
@@ -130,6 +131,16 @@ export default function RightSidebar() {
     return (
         <div className="w-80 bg-[#0f172a] border-l border-slate-800 flex flex-col h-full overflow-y-auto shrink-0">
             <div className="p-6 space-y-6">
+                {/* Media Properties - Show when video/audio is selected */}
+                {activeElement === 'media' && mediaFiles[activeElementIndex] && (
+                    <div>
+                        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                            Properties
+                        </h2>
+                        <MediaProperties />
+                    </div>
+                )}
+
                 {/* Video Scaling */}
                 <div>
                     <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">

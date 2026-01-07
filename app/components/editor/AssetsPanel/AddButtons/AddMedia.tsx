@@ -142,7 +142,7 @@ export default function AddMedia({ fileId }: { fileId: string }) {
                     opacity: 100,
                     crop: { x: 0, y: 0, width: finalFit.width, height: finalFit.height },
                     playbackSpeed: 1,
-                    volume: 100,
+                    volume: 50, // 0 dB default (50 = 0 dB, 0-50 maps to -60 to 0 dB, 50-100 maps to 0 to +12 dB)
                     type: fileType,
                     zIndex: 0,
                     aspectRatioFit: fileType === 'video' ? 'original' : undefined,

@@ -11,9 +11,10 @@ import TextTimeline from "./elements-timeline/TextTimeline";
 import { throttle } from 'lodash';
 import GlobalKeyHandlerProps from "../../../components/editor/keys/GlobalKeyHandlerProps";
 import toast from "react-hot-toast";
-import { GripVertical, Clock, Film, Type, Music, RefreshCw, X, ZoomIn, ZoomOut, Ruler } from 'lucide-react';
+import { GripVertical, Clock, Film, Type, Music, RefreshCw, X, ZoomIn, ZoomOut, Ruler, Trash2, Scissors } from 'lucide-react';
 import { MediaFile, TextElement } from "@/app/types";
 import { getVideoDuration } from "@/app/utils/videoDimensions";
+import Waveform from "./Waveform";
 export const Timeline = () => {
     const { currentTime, timelineZoom, enableMarkerTracking, activeElement, activeElementIndex, mediaFiles, textElements, duration, isPlaying, fps } = useAppSelector((state) => state.projectState);
     const dispatch = useDispatch();
@@ -357,6 +358,10 @@ export const Timeline = () => {
     const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
         if (!timelineRef.current) return;
 
+        // Deselect any selected item when clicking on timeline background
+        dispatch(setActiveElement(null));
+        dispatch(setActiveElementIndex(0));
+
         dispatch(setIsPlaying(false));
         const rect = timelineRef.current.getBoundingClientRect();
 
@@ -677,14 +682,7 @@ export const Timeline = () => {
         setTextDragStartPos(null);
         (e.target as Element).releasePointerCapture(e.pointerId);
         
-        // If we weren't dragging, allow click to select
-        if (!wasDragging && layerId) {
-            const layerIndex = textElements.findIndex(t => t.id === layerId);
-            if (layerIndex !== -1) {
-                dispatch(setActiveElement('text'));
-                dispatch(setActiveElementIndex(layerIndex));
-            }
-        }
+        // Selection is now handled in onPointerDown, so we don't need to handle it here
     };
 
     return (
@@ -696,6 +694,41 @@ export const Timeline = () => {
                     <span className="text-xs font-bold uppercase tracking-wider">Timeline</span>
                 </div>
                 <div className="flex items-center gap-4">
+                    {/* Split Button - Only show when item is selected */}
+                    {activeElement && (() => {
+                        let canSplit = false;
+                        if (activeElement === 'media') {
+                            const element = mediaFiles[activeElementIndex];
+                            if (element) {
+                                canSplit = currentTime > element.positionStart && currentTime < element.positionEnd;
+                            }
+                        } else if (activeElement === 'text') {
+                            const element = textElements[activeElementIndex];
+                            if (element) {
+                                canSplit = currentTime > element.positionStart && currentTime < element.positionEnd;
+                            }
+                        }
+                        return (
+                            <button
+                                onClick={handleSplit}
+                                disabled={!canSplit}
+                                className="p-1.5 text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 rounded transition-colors border border-blue-500/30 hover:border-blue-500/50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-blue-400 disabled:hover:bg-transparent"
+                                title={canSplit ? "Split at Playhead (S)" : "Place playhead within element to split"}
+                            >
+                                <Scissors className="w-4 h-4" />
+                            </button>
+                        );
+                    })()}
+                    {/* Delete Button - Only show when item is selected */}
+                    {activeElement && (
+                        <button
+                            onClick={() => handleDelete()}
+                            className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded transition-colors border border-red-500/30 hover:border-red-500/50"
+                            title="Delete Selected Item"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                    )}
                     {/* Zoom Controls */}
                     <div className="flex items-center gap-2">
                         <button
@@ -766,86 +799,8 @@ export const Timeline = () => {
                     })}
                 </div>
 
-                <div className="relative z-10 flex flex-col gap-4 min-w-max pt-6 pb-6">
-                    {/* Track 1: Video Clips */}
-                    <div className="flex items-center h-24 gap-0.5 relative" onClick={(e) => e.stopPropagation()}>
-                        {mediaFiles.filter((clip) => clip.type === 'video').length === 0 && (
-                            <div className="text-slate-500 text-sm italic ml-4 flex items-center gap-2 border border-dashed border-slate-700 rounded-lg px-8 py-4">
-                                Open Library to add clips
-                            </div>
-                        )}
-                        {mediaFiles
-                            .filter((clip) => clip.type === 'video')
-                            .sort((a, b) => a.positionStart - b.positionStart)
-                            .map((clip, index) => {
-                                const clipDuration = clip.positionEnd - clip.positionStart;
-                                const clipWidth = clipDuration * timelineZoom;
-                                const videoClips = mediaFiles.filter((c) => c.type === 'video').sort((a, b) => a.positionStart - b.positionStart);
-                                const actualIndex = videoClips.findIndex(c => c.id === clip.id);
-                                
-                                return (
-                                    <div
-                                        key={clip.id}
-                                        draggable={true}
-                                        onDragStart={(e) => handleClipDragStart(e, actualIndex)}
-                                        onDragOver={(e) => handleClipDragOver(e, actualIndex)}
-                                        onDragEnd={() => setDraggedClipIndex(null)}
-                                        className={`group relative h-24 bg-slate-800 rounded-md border border-slate-600 overflow-hidden select-none transition-transform active:cursor-grabbing cursor-grab
-                                            ${draggedClipIndex === actualIndex ? 'opacity-50 scale-95' : 'opacity-100'}
-                                            ${resizingItem?.id === clip.id ? 'ring-2 ring-blue-500 z-20' : ''}
-                                            ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'ring-2 ring-blue-500 z-20' : 'hover:border-blue-400'}
-                                        `}
-                                        style={{ 
-                                            width: `${clipWidth}px`,
-                                            left: `${clip.positionStart * timelineZoom}px`,
-                                            position: 'absolute',
-                                            transition: resizingItem?.id === clip.id ? 'none' : 'width 0.1s ease-out, transform 0.2s'
-                                        }}
-                                        onPointerDown={(e) => e.stopPropagation()}
-                                    >
-                                        {/* Video Preview Background */}
-                                        {clip.src && (
-                                            <video 
-                                                src={clip.src}
-                                                className="absolute inset-0 w-full h-full object-cover opacity-60 pointer-events-none"
-                                                muted
-                                                onLoadedMetadata={(e) => { e.currentTarget.currentTime = 1; }}
-                                            />
-                                        )}
-                                        <div className="absolute left-0 top-0 bottom-0 w-6 flex items-center justify-center bg-black/20 cursor-grab active:cursor-grabbing hover:bg-black/40 transition-colors z-10">
-                                            <GripVertical className="w-4 h-4 text-white/50" />
-                                        </div>
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pl-6 pr-4">
-                                            <span className="text-xs font-medium text-white truncate w-full text-center drop-shadow-md z-10 px-2 relative mix-blend-difference">
-                                                {clip.fileName}
-                                            </span>
-                                        </div>
-                                        {/* Delete Button */}
-                                        <button 
-                                            className="absolute right-1 top-1 p-1 bg-black/60 hover:bg-red-500 text-white rounded cursor-pointer z-30 transition-colors opacity-0 group-hover:opacity-100" 
-                                            title="Remove Clip"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                dispatch(setActiveElement('media'));
-                                                dispatch(setActiveElementIndex(mediaFiles.findIndex(m => m.id === clip.id)));
-                                                handleDelete(clip);
-                                            }}
-                                        >
-                                            <X className="w-3 h-3" />
-                                        </button>
-                                        {/* Resize Handle */}
-                                        <div 
-                                            className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize bg-blue-500/0 hover:bg-blue-500/50 group-hover:bg-blue-500/30 transition-colors flex items-center justify-center z-20"
-                                            onPointerDown={(e) => handleResizeStart(e, clip.id, 'clip', clipWidth)}
-                                        >
-                                            <div className="w-0.5 h-8 bg-white/50 rounded-full"></div>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                    </div>
-
-                    {/* Track 2: Text Layers - Stack only when overlapping */}
+                <div className="relative z-10 flex flex-col gap-2 min-w-max pt-6 pb-6">
+                    {/* Track 1: Text Layers - Stack only when overlapping */}
                     {(() => {
                         // Helper function to check if two time ranges overlap
                         const doRangesOverlap = (a: TextElement, b: TextElement): boolean => {
@@ -903,12 +858,20 @@ export const Timeline = () => {
                                             onPointerDown={(e) => {
                                                 // Don't start drag if clicking on resize handle
                                                 if ((e.target as HTMLElement).closest('.resize-handle')) return;
+                                                
+                                                // Select the text element
+                                                const layerIndex = textElements.findIndex(t => t.id === layer.id);
+                                                if (layerIndex !== -1) {
+                                                    dispatch(setActiveElement('text'));
+                                                    dispatch(setActiveElementIndex(layerIndex));
+                                                }
+                                                
                                                 handleTextDragStart(e, layer);
                                             }}
                                             className={`absolute h-8 rounded-md border flex items-center px-2 cursor-move select-none overflow-hidden group transition-all duration-200
-                                                ${resizingItem?.id === layer.id ? 'ring-2 ring-purple-500 z-20' : ''}
-                                                ${isDragging ? 'ring-2 ring-purple-400 opacity-90 z-30' : ''}
-                                                ${activeElement === 'text' && textElements[activeElementIndex]?.id === layer.id ? 'bg-purple-600 border-purple-400 shadow-lg shadow-purple-900/50 z-20' : 'bg-purple-900/40 border-purple-500/30 hover:bg-purple-900/60'}
+                                                ${resizingItem?.id === layer.id ? 'ring-2 ring-purple-500 z-20 border-purple-500' : ''}
+                                                ${isDragging ? 'ring-2 ring-purple-400 opacity-90 z-30 border-purple-400' : ''}
+                                                ${activeElement === 'text' && textElements[activeElementIndex]?.id === layer.id ? 'bg-purple-900/60 border-2 border-white shadow-lg shadow-white/20 z-20' : 'bg-purple-900/40 border border-purple-500/30 hover:bg-purple-900/60'}
                                             `}
                                             style={{
                                                 left: `${layer.positionStart * timelineZoom}px`,
@@ -943,9 +906,120 @@ export const Timeline = () => {
                         ));
                     })()}
 
+                    {/* Track 2: Video Clips */}
+                    <div className="flex items-center h-24 gap-0.5 relative" onClick={(e) => e.stopPropagation()}>
+                        {mediaFiles.filter((clip) => clip.type === 'video').length === 0 && (
+                            <div className="text-slate-500 text-sm italic ml-4 flex items-center gap-2 border border-dashed border-slate-700 rounded-lg px-8 py-4">
+                                Open Library to add clips
+                            </div>
+                        )}
+                        {mediaFiles
+                            .filter((clip) => clip.type === 'video')
+                            .sort((a, b) => a.positionStart - b.positionStart)
+                            .map((clip, index) => {
+                                const clipDuration = clip.positionEnd - clip.positionStart;
+                                const clipWidth = clipDuration * timelineZoom;
+                                const videoClips = mediaFiles.filter((c) => c.type === 'video').sort((a, b) => a.positionStart - b.positionStart);
+                                const actualIndex = videoClips.findIndex(c => c.id === clip.id);
+                                
+                                return (
+                                    <div
+                                        key={clip.id}
+                                        draggable={true}
+                                        onDragStart={(e) => handleClipDragStart(e, actualIndex)}
+                                        onDragOver={(e) => handleClipDragOver(e, actualIndex)}
+                                        onDragEnd={() => setDraggedClipIndex(null)}
+                                        className={`group relative h-24 bg-slate-800 rounded-md border overflow-hidden select-none transition-transform active:cursor-grabbing cursor-grab
+                                            ${draggedClipIndex === actualIndex ? 'opacity-50 scale-95' : 'opacity-100'}
+                                            ${resizingItem?.id === clip.id ? 'ring-2 ring-blue-500 z-20 border-blue-500' : ''}
+                                            ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'border-2 border-white z-20 shadow-lg shadow-white/20' : 'border border-slate-600 hover:border-slate-400'}
+                                        `}
+                                        style={{ 
+                                            width: `${clipWidth}px`,
+                                            left: `${clip.positionStart * timelineZoom}px`,
+                                            position: 'absolute',
+                                            transition: resizingItem?.id === clip.id ? 'none' : 'width 0.1s ease-out, transform 0.2s'
+                                        }}
+                                        onPointerDown={(e) => {
+                                            e.stopPropagation();
+                                            // Only select if not clicking on resize handle or delete button
+                                            if (!(e.target as HTMLElement).closest('.resize-handle') && 
+                                                !(e.target as HTMLElement).closest('button')) {
+                                                const allMediaIndex = mediaFiles.findIndex(m => m.id === clip.id);
+                                                dispatch(setActiveElement('media'));
+                                                dispatch(setActiveElementIndex(allMediaIndex));
+                                            }
+                                        }}
+                                    >
+                                        {/* Video Preview Background - Leave space for waveform at bottom */}
+                                        {clip.src && (
+                                            <video 
+                                                src={clip.src}
+                                                className="absolute inset-0 w-full object-cover opacity-60 pointer-events-none rounded-md"
+                                                style={{ height: 'calc(100% - 48px)', top: 0 }}
+                                                muted
+                                                onLoadedMetadata={(e) => { e.currentTarget.currentTime = 1; }}
+                                            />
+                                        )}
+                                        <div className="absolute left-0 top-0 bottom-0 w-6 flex items-center justify-center bg-black/20 cursor-grab active:cursor-grabbing hover:bg-black/40 transition-colors z-10 rounded-l-md">
+                                            <GripVertical className="w-4 h-4 text-white/50" />
+                                        </div>
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pl-6 pr-4" style={{ bottom: '48px', top: 0 }}>
+                                            <span className="text-xs font-medium text-white truncate w-full text-center drop-shadow-md z-10 px-2 relative mix-blend-difference">
+                                                {clip.fileName}
+                                            </span>
+                                        </div>
+                                        {/* Waveform Visualization - CapCut style at bottom */}
+                                        {clip.src && clipWidth > 50 && (
+                                            <div 
+                                                className="absolute bottom-0 left-6 right-4 pointer-events-none z-30" 
+                                                style={{ 
+                                                    height: '48px',
+                                                    width: 'calc(100% - 40px)',
+                                                    background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)',
+                                                    borderRadius: '0 0 6px 6px'
+                                                }}
+                                            >
+                                                <Waveform 
+                                                    src={clip.src} 
+                                                    width={Math.max(clipWidth - 40, 100)} 
+                                                    height={48}
+                                                    color={activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? "#ffffff" : "#60a5fa"}
+                                                    volume={clip.volume ?? 50}
+                                                />
+                                            </div>
+                                        )}
+                                        {/* Delete Button */}
+                                        <button 
+                                            className="absolute right-1 top-1 p-1 bg-black/60 hover:bg-red-500 text-white rounded cursor-pointer z-30 transition-colors opacity-0 group-hover:opacity-100" 
+                                            title="Remove Clip"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                dispatch(setActiveElement('media'));
+                                                dispatch(setActiveElementIndex(mediaFiles.findIndex(m => m.id === clip.id)));
+                                                handleDelete(clip);
+                                            }}
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                        {/* Resize Handle */}
+                                        <div 
+                                            className="resize-handle absolute right-0 top-0 bottom-0 w-4 cursor-col-resize bg-blue-500/0 hover:bg-blue-500/50 group-hover:bg-blue-500/30 transition-colors flex items-center justify-center z-20"
+                                            onPointerDown={(e) => {
+                                                e.stopPropagation();
+                                                handleResizeStart(e, clip.id, 'clip', clipWidth);
+                                            }}
+                                        >
+                                            <div className="w-0.5 h-8 bg-white/50 rounded-full"></div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                    </div>
+
                     {/* Track 3: Audio */}
                     {mediaFiles.filter((clip) => clip.type === 'audio').length > 0 && (
-                        <div className="flex items-center h-8 gap-0.5 relative mt-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center h-8 gap-0.5 relative" onClick={(e) => e.stopPropagation()}>
                             {mediaFiles
                                 .filter((clip) => clip.type === 'audio')
                                 .map((clip) => {
@@ -954,9 +1028,9 @@ export const Timeline = () => {
                                     return (
                                         <div 
                                             key={clip.id}
-                                            className={`group relative h-8 bg-blue-900/30 rounded-md border border-blue-500/30 flex items-center px-2 overflow-hidden select-none transition-transform
-                                                ${resizingItem?.id === clip.id ? 'ring-2 ring-blue-500 z-20' : ''}
-                                                ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'ring-2 ring-blue-500 z-20 border-blue-400' : 'hover:border-blue-400'}
+                                            className={`group relative h-8 bg-blue-900/30 rounded-md border overflow-hidden select-none transition-transform
+                                                ${resizingItem?.id === clip.id ? 'ring-2 ring-blue-500 z-20 border-blue-500' : ''}
+                                                ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'border-2 border-white z-20 shadow-lg shadow-white/20' : 'border border-blue-500/30 hover:border-blue-400'}
                                             `}
                                             style={{ 
                                                 width: `${audioWidth}px`, 
@@ -965,16 +1039,42 @@ export const Timeline = () => {
                                                 transition: resizingItem?.id === clip.id ? 'none' : 'width 0.1s ease-out'
                                             }}
                                             title={clip.fileName}
-                                            onPointerDown={(e) => e.stopPropagation()}
-                                            onClick={(e) => {
+                                            onPointerDown={(e) => {
                                                 e.stopPropagation();
-                                                dispatch(setActiveElement('media'));
-                                                dispatch(setActiveElementIndex(mediaFiles.findIndex(m => m.id === clip.id)));
+                                                // Only select if not clicking on resize handle or delete button
+                                                if (!(e.target as HTMLElement).closest('.resize-handle') && 
+                                                    !(e.target as HTMLElement).closest('button')) {
+                                                    const allMediaIndex = mediaFiles.findIndex(m => m.id === clip.id);
+                                                    dispatch(setActiveElement('media'));
+                                                    dispatch(setActiveElementIndex(allMediaIndex));
+                                                }
                                             }}
                                         >
-                                            <Music className="w-3 h-3 mr-2 text-blue-400 shrink-0" />
-                                            <span className="text-xs text-blue-200 truncate font-medium">{clip.fileName}</span>
-                                            <div className="absolute inset-0 opacity-10 bg-[repeating-linear-gradient(90deg,transparent,transparent_2px,#60a5fa_2px,#60a5fa_4px)] pointer-events-none"></div>
+                                            {/* Audio Icon and Label - Positioned at top */}
+                                            <div className="absolute top-0 left-0 right-0 h-6 flex items-center px-2 pointer-events-none z-10">
+                                                <Music className="w-3 h-3 mr-1 text-blue-400 shrink-0" />
+                                                <span className="text-[10px] text-blue-200 truncate font-medium">{clip.fileName}</span>
+                                            </div>
+                                            {/* Waveform Visualization - Compact at bottom */}
+                                            {clip.src && audioWidth > 50 && (
+                                                <div 
+                                                    className="absolute bottom-0 left-0 right-0 pointer-events-none z-0" 
+                                                    style={{ 
+                                                        height: '20px',
+                                                        width: '100%',
+                                                        background: 'linear-gradient(to top, rgba(0,0,0,0.3) 0%, transparent 100%)',
+                                                        borderRadius: '0 0 6px 6px'
+                                                    }}
+                                                >
+                                                    <Waveform 
+                                                        src={clip.src} 
+                                                        width={Math.max(audioWidth, 100)} 
+                                                        height={20}
+                                                        color={activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? "#ffffff" : "#60a5fa"}
+                                                        volume={clip.volume ?? 50}
+                                                    />
+                                                </div>
+                                            )}
                                             {/* Delete Button */}
                                             <button 
                                                 className="absolute right-1 top-1 p-1 bg-black/60 hover:bg-red-500 text-white rounded cursor-pointer z-30 transition-colors opacity-0 group-hover:opacity-100" 
@@ -988,14 +1088,12 @@ export const Timeline = () => {
                                             </button>
                                             {/* Resize Handle */}
                                             <div 
-                                                className="absolute right-0 top-0 bottom-0 w-4 cursor-col-resize bg-blue-500/0 hover:bg-blue-500/50 group-hover:bg-blue-500/30 transition-colors flex items-center justify-center z-20"
+                                                className="resize-handle absolute right-0 top-0 bottom-0 w-3 cursor-col-resize hover:bg-blue-400/50 transition-colors z-20"
                                                 onPointerDown={(e) => {
                                                     e.stopPropagation();
                                                     handleResizeStart(e, clip.id, 'clip', audioWidth);
                                                 }}
-                                            >
-                                                <div className="w-0.5 h-6 bg-white/50 rounded-full"></div>
-                                            </div>
+                                            />
                                         </div>
                                     );
                                 })}

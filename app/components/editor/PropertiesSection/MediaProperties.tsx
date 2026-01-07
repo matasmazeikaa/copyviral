@@ -6,6 +6,35 @@ import { MediaFile } from '../../../types';
 import { useAppDispatch } from '../../../store';
 import { calculateVideoFit } from '../../../utils/videoDimensions';
 
+// Convert volume (0-100) to dB (-60 to +12)
+// 0-100 maps to -60dB to +12dB, with 50 = 0dB
+function volumeToDB(volume: number): number {
+    // Map 0-100 to -60 to +12
+    // 50 (middle) = 0dB
+    if (volume <= 0) return -60;
+    if (volume >= 100) return 12;
+    
+    // Linear mapping: 0-50 maps to -60 to 0, 50-100 maps to 0 to +12
+    if (volume <= 50) {
+        return (volume / 50) * 60 - 60; // 0-50 -> -60 to 0
+    } else {
+        return ((volume - 50) / 50) * 12; // 50-100 -> 0 to +12
+    }
+}
+
+// Convert dB (-60 to +12) to volume (0-100)
+function dbToVolume(db: number): number {
+    if (db <= -60) return 0;
+    if (db >= 12) return 100;
+    
+    // Inverse mapping
+    if (db <= 0) {
+        return ((db + 60) / 60) * 50; // -60 to 0 -> 0 to 50
+    } else {
+        return 50 + (db / 12) * 50; // 0 to +12 -> 50 to 100
+    }
+}
+
 export default function MediaProperties() {
     const { mediaFiles, activeElementIndex } = useAppSelector((state) => state.projectState);
     const mediaFile = mediaFiles[activeElementIndex];
@@ -134,149 +163,41 @@ export default function MediaProperties() {
                         </div>
                     </div>
                 </div> */}
-                {/* Visual Properties */}
-                <div className="space-y-6">
-                    <h4 className="font-semibold">Visual Properties</h4>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <label className="block text-sm">X Position</label>
-                            <input
-                                type="number"
-                                step="10"
-                                value={mediaFile.x || 0}
-                                onChange={(e) => onUpdateMedia(mediaFile.id, { x: Number(e.target.value) })}
-                                className="w-full p-2 bg-darkSurfacePrimary border border-white border-opacity-10 shadow-md text-white rounded focus:outline-none focus:ring-2 focus:ring-white-500 focus:border-white-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm">Y Position</label>
-                            <input
-                                type="number"
-                                step="10"
-                                value={mediaFile.y || 0}
-                                onChange={(e) => onUpdateMedia(mediaFile.id, { y: Number(e.target.value) })}
-                                className="w-full p-2 bg-darkSurfacePrimary border border-white border-opacity-10 shadow-md text-white rounded focus:outline-none focus:ring-2 focus:ring-white-500 focus:border-white-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm">Width</label>
-                            <input
-                                type="number"
-                                step="10"
-                                value={mediaFile.width || 100}
-                                onChange={(e) => onUpdateMedia(mediaFile.id, { width: Number(e.target.value) })}
-                                className="w-full p-2 bg-darkSurfacePrimary border border-white border-opacity-10 shadow-md text-white rounded focus:outline-none focus:ring-2 focus:ring-white-500 focus:border-white-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm">Height</label>
-                            <input
-                                type="number"
-                                step="10"
-                                value={mediaFile.height || 100}
-                                onChange={(e) => onUpdateMedia(mediaFile.id, { height: Number(e.target.value) })}
-                                className="w-full p-2 bg-darkSurfacePrimary border border-white border-opacity-10 shadow-md text-white rounded focus:outline-none focus:ring-2 focus:ring-white-500 focus:border-white-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm">Zindex</label>
-                            <input
-                                type="number"
-                                value={mediaFile.zIndex || 0}
-                                onChange={(e) => onUpdateMedia(mediaFile.id, { zIndex: Number(e.target.value) })}
-                                className="w-full p-2 bg-darkSurfacePrimary border border-white border-opacity-10 shadow-md text-white rounded focus:outline-none focus:ring-2 focus:ring-white-500 focus:border-white-500"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm">Opacity</label>
-                            <input
-                                type="range"
-                                min="0"
-                                max="100"
-                                value={mediaFile.opacity}
-                                onChange={(e) => onUpdateMedia(mediaFile.id, { opacity: Number(e.target.value) })}
-                                className="w-full bg-darkSurfacePrimary border border-white border-opacity-10 shadow-md text-white rounded focus:outline-none focus:border-white-500"
-                            />
-                        </div>
-                    </div>
-                </div>
-                {/* Video Fit Options - Only for videos */}
-                {mediaFile.type === "video" && mediaFile.originalWidth && mediaFile.originalHeight && (
-                    <div className="space-y-2">
-                        <h4 className="font-semibold">Aspect Ratio Fit</h4>
-                        <div className="grid grid-cols-2 gap-2">
-                            <button
-                                onClick={() => handleAspectRatioChange('original')}
-                                className={`p-2 text-xs rounded border transition-colors ${
-                                    (mediaFile.aspectRatioFit || 'original') === 'original'
-                                        ? 'bg-purple-600 border-purple-500 text-white'
-                                        : 'bg-darkSurfacePrimary border-white border-opacity-10 text-white hover:bg-darkSurfacePrimary/80'
-                                }`}
-                            >
-                                Original
-                            </button>
-                            <button
-                                onClick={() => handleAspectRatioChange('1:1')}
-                                className={`p-2 text-xs rounded border transition-colors ${
-                                    mediaFile.aspectRatioFit === '1:1'
-                                        ? 'bg-purple-600 border-purple-500 text-white'
-                                        : 'bg-darkSurfacePrimary border-white border-opacity-10 text-white hover:bg-darkSurfacePrimary/80'
-                                }`}
-                            >
-                                1:1 Square
-                            </button>
-                            <button
-                                onClick={() => handleAspectRatioChange('cover')}
-                                className={`p-2 text-xs rounded border transition-colors ${
-                                    mediaFile.aspectRatioFit === 'cover'
-                                        ? 'bg-purple-600 border-purple-500 text-white'
-                                        : 'bg-darkSurfacePrimary border-white border-opacity-10 text-white hover:bg-darkSurfacePrimary/80'
-                                }`}
-                            >
-                                Cover
-                            </button>
-                            <button
-                                onClick={() => handleAspectRatioChange('16:9')}
-                                className={`p-2 text-xs rounded border transition-colors ${
-                                    mediaFile.aspectRatioFit === '16:9'
-                                        ? 'bg-purple-600 border-purple-500 text-white'
-                                        : 'bg-darkSurfacePrimary border-white border-opacity-10 text-white hover:bg-darkSurfacePrimary/80'
-                                }`}
-                            >
-                                16:9
-                            </button>
-                        </div>
-                        <div className="mt-4">
-                            <label className="block text-sm mb-2 text-white">
-                                Zoom: {Math.round((mediaFile.zoom || 1.0) * 100)}%
-                            </label>
-                            <input
-                                type="range"
-                                min="0.1"
-                                max="3"
-                                step="0.01"
-                                value={mediaFile.zoom || 1.0}
-                                onChange={(e) => handleZoomChange(Number(e.target.value))}
-                                className="w-full bg-darkSurfacePrimary border border-white border-opacity-10 shadow-md text-white rounded focus:outline-none focus:border-white-500"
-                            />
-                        </div>
-                    </div>
-                )}
                 {/* Audio Properties */}
                 {(mediaFile.type === "video" || mediaFile.type === "audio") && <div className="space-y-2">
                     <h4 className="font-semibold">Audio Properties</h4>
                     <div className="grid grid-cols-1 gap-4">
                         <div>
-                            <label className="block text-sm mb-2 text-white">Volume</label>
-                            <input
-                                type="range"
-                                min="0"
-                                max="100"
-                                step="1"
-                                value={mediaFile.volume}
-                                onChange={(e) => onUpdateMedia(mediaFile.id, { volume: Number(e.target.value) })}
-                                className="w-full bg-darkSurfacePrimary border border-white border-opacity-10 shadow-md text-white rounded focus:outline-none focus:border-white-500"
-                            />
+                            <label className="block text-sm mb-2 text-white font-medium">
+                                Volume: <span className="text-blue-400 font-bold">{volumeToDB(mediaFile.volume ?? 50).toFixed(1)} dB</span>
+                            </label>
+                            <div className="relative">
+                                <input
+                                    type="range"
+                                    min="-60"
+                                    max="12"
+                                    step="0.1"
+                                    value={volumeToDB(mediaFile.volume ?? 50)}
+                                    onChange={(e) => {
+                                        const dbValue = Number(e.target.value);
+                                        const volumeValue = dbToVolume(dbValue);
+                                        onUpdateMedia(mediaFile.id, { volume: volumeValue });
+                                    }}
+                                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                                    style={{
+                                        background: `linear-gradient(to right, 
+                                            #ef4444 0%, 
+                                            #ef4444 ${((0 - (-60)) / (12 - (-60))) * 100}%, 
+                                            #22c55e ${((0 - (-60)) / (12 - (-60))) * 100}%, 
+                                            #22c55e 100%)`
+                                    }}
+                                />
+                                <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                                    <span>-60 dB</span>
+                                    <span className="font-bold text-white">0 dB</span>
+                                    <span>+12 dB</span>
+                                </div>
+                            </div>
                         </div>
                         {/* TODO: Add playback speed */}
                         {/* <div>
