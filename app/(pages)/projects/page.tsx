@@ -6,8 +6,10 @@ import Link from "next/link";
 import { useAppDispatch, useAppSelector } from '../../store';
 import { addProject, deleteProject, rehydrateProjects, setCurrentProject } from '../../store/slices/projectsSlice';
 import { listProjects, storeProject, deleteProject as deleteProjectFromDB } from '../../store';
+import { listProjectsFromSupabase, loadProjectFromSupabase, deleteProjectFromSupabase, saveProjectToSupabase } from '../../services/projectService';
 import { ProjectState } from '../../types';
 import { toast } from 'react-hot-toast';
+import { useAuth } from '../../contexts/AuthContext';
 export default function Projects() {
     const dispatch = useAppDispatch();
     const { projects, currentProjectId } = useAppSelector((state) => state.projects);
@@ -15,13 +17,48 @@ export default function Projects() {
     const [newProjectName, setNewProjectName] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const { user } = useAuth();
 
     useEffect(() => {
         const loadProjects = async () => {
             setIsLoading(true);
             try {
-                const storedProjects = await listProjects();
-                dispatch(rehydrateProjects(storedProjects));
+                // Load from both IndexedDB (local) and Supabase (cloud)
+                const localProjects = await listProjects();
+                let cloudProjects: ProjectState[] = [];
+                
+                if (user) {
+                    try {
+                        const supabaseProjects = await listProjectsFromSupabase(user.id);
+                        // Load full project data from Supabase
+                        const loadedProjects = await Promise.all(
+                            supabaseProjects.map(async (record) => {
+                                const fullProject = await loadProjectFromSupabase(record.id, user.id);
+                                return fullProject;
+                            })
+                        );
+                        // Filter out nulls
+                        cloudProjects = loadedProjects.filter((p): p is ProjectState => p !== null);
+                    } catch (error) {
+                        console.error('Error loading projects from Supabase:', error);
+                    }
+                }
+
+                // Merge projects: prefer cloud version if exists, otherwise use local
+                const projectMap = new Map<string, ProjectState>();
+                
+                // Add local projects first
+                localProjects.forEach(project => {
+                    projectMap.set(project.id, project);
+                });
+                
+                // Override with cloud projects (they're more up-to-date)
+                cloudProjects.forEach(project => {
+                    projectMap.set(project.id, project);
+                });
+
+                const mergedProjects = Array.from(projectMap.values());
+                dispatch(rehydrateProjects(mergedProjects));
             } catch (error) {
                 toast.error('Failed to load projects');
                 console.error('Error loading projects:', error);
@@ -30,7 +67,7 @@ export default function Projects() {
             }
         };
         loadProjects();
-    }, [dispatch]);
+    }, [dispatch, user]);
 
     useEffect(() => {
         if (isCreating && inputRef.current) {
@@ -40,6 +77,11 @@ export default function Projects() {
 
     const handleCreateProject = async () => {
         if (!newProjectName.trim()) return;
+
+        if (!user) {
+            toast.error('You must be logged in to create a project');
+            return;
+        }
 
         // TODO: use reducer not this to create new project
         const newProject: ProjectState = {
@@ -75,18 +117,62 @@ export default function Projects() {
             },
         };
 
-        await storeProject(newProject);
-        dispatch(addProject(newProject));
-        setNewProjectName('');
-        setIsCreating(false);
-        toast.success('Project created successfully');
+        try {
+            // Save to Supabase first (source of truth)
+            const savedId = await saveProjectToSupabase(newProject, user.id);
+            
+            if (!savedId) {
+                toast.error('Failed to create project in database');
+                return;
+            }
+
+            // Only after successful Supabase save, save to IndexedDB (local cache)
+            await storeProject(newProject);
+            
+            // Add to Redux store
+            dispatch(addProject(newProject));
+            setNewProjectName('');
+            setIsCreating(false);
+            toast.success('Project created successfully');
+        } catch (error) {
+            console.error('Error creating project:', error);
+            toast.error('Failed to create project');
+        }
     };
 
     const handleDeleteProject = async (projectId: string) => {
+        // Delete from both IndexedDB and Supabase
         await deleteProjectFromDB(projectId);
+        if (user) {
+            await deleteProjectFromSupabase(projectId, user.id);
+        }
         dispatch(deleteProject(projectId));
-        const storedProjects = await listProjects();
-        dispatch(rehydrateProjects(storedProjects));
+        
+        // Reload projects
+        const localProjects = await listProjects();
+        let cloudProjects: ProjectState[] = [];
+        
+        if (user) {
+            try {
+                const supabaseProjects = await listProjectsFromSupabase(user.id);
+                const loadedProjects = await Promise.all(
+                    supabaseProjects.map(async (record) => {
+                        const fullProject = await loadProjectFromSupabase(record.id, user.id);
+                        return fullProject;
+                    })
+                );
+                cloudProjects = loadedProjects.filter((p): p is ProjectState => p !== null);
+            } catch (error) {
+                console.error('Error loading projects from Supabase:', error);
+            }
+        }
+
+        const projectMap = new Map<string, ProjectState>();
+        localProjects.forEach(project => projectMap.set(project.id, project));
+        cloudProjects.forEach(project => projectMap.set(project.id, project));
+        const mergedProjects = Array.from(projectMap.values());
+        
+        dispatch(rehydrateProjects(mergedProjects));
         toast.success('Project deleted successfully');
     };
 

@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import { useAppSelector, useAppDispatch } from "@/app/store";
-import { setMediaFiles, setFilesID } from "@/app/store/slices/projectSlice";
+import { setMediaFiles, setFilesID, setTextElements, setActiveElement, setActiveElementIndex } from "@/app/store/slices/projectSlice";
 import { storeFile, getFile } from "@/app/store";
 import { addMediaLoading, updateMediaProgress, completeMediaLoading, errorMediaLoading } from "@/app/store/slices/loadingSlice";
-import { MediaFile, LibraryItem } from "@/app/types";
-import { FileVideo, Crown, Zap, LayoutGrid, Upload, Library, Sparkles, Music, LogOut, Link as LinkIcon, Loader2, Trash2 } from "lucide-react";
+import { MediaFile, LibraryItem, TextElement } from "@/app/types";
+import { FileVideo, Crown, Zap, LayoutGrid, Upload, Library, Sparkles, Music, LogOut, Link as LinkIcon, Loader2, Trash2, Type } from "lucide-react";
 import AITools from "./AssetsPanel/tools-section/AITools";
 import MediaList from "./AssetsPanel/tools-section/MediaList";
 import { MediaLibraryModal } from "./AssetsPanel/MediaLibraryModal";
@@ -17,13 +17,14 @@ import { categorizeFile } from "@/app/utils/utils";
 import { getVideoDimensions, calculateVideoFit, getAudioDuration } from "@/app/utils/videoDimensions";
 import { downloadMediaFile, uploadMediaFile } from "@/app/services/mediaLibraryService";
 import { useAuth } from "@/app/contexts/AuthContext";
+import { DEFAULT_TEXT_STYLE } from "@/app/constants";
 
 const DEFAULT_MEDIA_TIME = 2;
 const CANVAS_WIDTH = 1080;
 const CANVAS_HEIGHT = 1920;
 
 export default function LeftSidebar() {
-    const { mediaFiles, filesID, id: projectId } = useAppSelector((state) => state.projectState);
+    const { mediaFiles, filesID, id: projectId, textElements } = useAppSelector((state) => state.projectState);
     const dispatch = useAppDispatch();
     const router = useRouter();
     const { user } = useAuth();
@@ -662,6 +663,30 @@ export default function LeftSidebar() {
         toast.success("Template gallery coming soon!");
     };
 
+    const handleAddText = () => {
+        const lastEnd = textElements.length > 0 ? Math.max(...textElements.map(f => f.positionEnd)) : 0;
+        // Get the highest z-index from existing text elements, or default to 0
+        const maxZIndex = textElements.length > 0 
+            ? Math.max(...textElements.map(t => t.zIndex ?? 0))
+            : -1;
+
+        const newTextElement: TextElement = {
+            ...DEFAULT_TEXT_STYLE,
+            id: crypto.randomUUID(),
+            text: "My Epic Trip",
+            positionStart: lastEnd || 0,
+            positionEnd: lastEnd + 3 || 3,
+            x: 540,
+            y: 576, // 30% of 1920
+            fontSize: 48,
+            zIndex: maxZIndex + 1, // Assign a z-index higher than all existing text elements
+        };
+        dispatch(setTextElements([...textElements, newTextElement]));
+        dispatch(setActiveElement('text'));
+        dispatch(setActiveElementIndex(textElements.length));
+        toast.success("Text layer added");
+    };
+
     return (
         <div className="w-80 bg-[#0f172a] border-r border-slate-800 flex flex-col h-full overflow-hidden shrink-0 z-20">
             <div className="p-6 border-b border-slate-800">
@@ -720,6 +745,13 @@ export default function LeftSidebar() {
                         >
                             <Library className="w-6 h-6 mb-2" />
                             <span className="text-xs font-bold">Library</span>
+                        </button>
+                        <button 
+                            onClick={handleAddText}
+                            className="flex flex-col items-center justify-center p-4 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
+                        >
+                            <Type className="w-6 h-6 mb-2" />
+                            <span className="text-xs font-bold">Add Text</span>
                         </button>
                     </div>
                 </div>

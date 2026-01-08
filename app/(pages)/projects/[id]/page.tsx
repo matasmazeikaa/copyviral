@@ -15,6 +15,7 @@ import Image from "next/image";
 import { useAuth } from "../../../contexts/AuthContext";
 import { createClient } from "../../../utils/supabase/client";
 import { addMediaLoading, updateMediaProgress, completeMediaLoading, errorMediaLoading } from "../../../store/slices/loadingSlice";
+import { loadProjectFromSupabase } from "../../../services/projectService";
 
 export default function Project({ params }: { params: { id: string } }) {
     const { id } = params;
@@ -38,7 +39,18 @@ export default function Project({ params }: { params: { id: string } }) {
         const loadProject = async () => {
             if (id) {
                 setIsLoading(true);
-                const project = await getProject(id);
+                // Try to load from IndexedDB first (faster)
+                let project = await getProject(id);
+                
+                // If not found locally and user is authenticated, try Supabase
+                if (!project && user) {
+                    project = await loadProjectFromSupabase(id, user.id);
+                    // If found in Supabase, also save to IndexedDB for faster future access
+                    if (project) {
+                        await storeProject(project);
+                    }
+                }
+                
                 if (project) {
                     dispatch(setCurrentProject(id));
                     setIsLoading(false);
@@ -48,13 +60,24 @@ export default function Project({ params }: { params: { id: string } }) {
             }
         };
         loadProject();
-    }, [id, dispatch, router]);
+    }, [id, dispatch, router, user]);
 
     // set project state from with the current project id
     useEffect(() => {
         const loadProject = async () => {
             if (currentProjectId) {
-                const project = await getProject(currentProjectId);
+                // Try to load from IndexedDB first
+                let project = await getProject(currentProjectId);
+                
+                // If not found locally and user is authenticated, try Supabase
+                if (!project && user) {
+                    project = await loadProjectFromSupabase(currentProjectId, user.id);
+                    // If found in Supabase, also save to IndexedDB for faster future access
+                    if (project) {
+                        await storeProject(project);
+                    }
+                }
+                
                 if (project) {
                     dispatch(rehydrate(project));
 

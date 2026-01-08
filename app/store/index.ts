@@ -5,6 +5,7 @@ import { openDB } from 'idb';
 import projectStateReducer from './slices/projectSlice';
 import projectsReducer from './slices/projectsSlice';
 import loadingReducer from './slices/loadingSlice';
+import { supabaseSyncMiddleware } from './middleware/supabaseSyncMiddleware';
 import toast from 'react-hot-toast';
 
 // Create IndexedDB database for files and projects
@@ -239,7 +240,7 @@ export const listProjects = async () => {
     }
 };
 
-export const store = configureStore({
+const store = configureStore({
     reducer: {
         projectState: projectStateReducer,
         projects: projectsReducer,
@@ -248,8 +249,12 @@ export const store = configureStore({
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware({
             serializableCheck: false,
-        }),
+        }).concat(supabaseSyncMiddleware),
 });
+
+export { store };
+export type RootState = ReturnType<typeof store.getState>;
+export type AppDispatch = typeof store.dispatch;
 
 // TODO: remove old state (localStorage we use indexedDB now) that is not used anymore 
 
@@ -276,9 +281,6 @@ export const store = configureStore({
 //         saveState(state);
 //     });
 // }
-
-export type RootState = ReturnType<typeof store.getState>;
-export type AppDispatch = typeof store.dispatch;
 
 export const useAppDispatch = () => useDispatch<AppDispatch>();
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector; 

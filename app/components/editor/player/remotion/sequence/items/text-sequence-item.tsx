@@ -2,6 +2,7 @@ import { TextElement } from "@/app/types";
 import { useAppDispatch, useAppSelector } from "@/app/store";
 import { setTextElements, setActiveElement, setActiveElementIndex } from "@/app/store/slices/projectSlice";
 import { Sequence } from "remotion";
+import { useRef, useState } from "react";
 
 const REMOTION_SAFE_FRAME = 0;
 
@@ -26,6 +27,9 @@ export const TextSequenceItem: React.FC<{ item: TextElement; options: SequenceIt
     const { handleTextChange, fps, editableTextId } = options;
     const dispatch = useAppDispatch();
     const { textElements, resolution } = useAppSelector((state) => state.projectState);
+    const [isDragging, setIsDragging] = useState(false);
+    const dragStartPos = useRef<{ x: number; y: number } | null>(null);
+    const hasMoved = useRef(false);
 
     const { from, durationInFrames } = calculateFrames(
         {
@@ -41,14 +45,47 @@ export const TextSequenceItem: React.FC<{ item: TextElement; options: SequenceIt
         )));
     };
 
-    // Handle click to select text element
-    const handleClick = (e: React.MouseEvent) => {
+    // Handle mouse down - start tracking for drag
+    const handleMouseDown = (e: React.MouseEvent) => {
+        if (e.button !== 0) return; // Only handle left mouse button
         e.stopPropagation();
-        const index = textElements.findIndex(t => t.id === item.id);
-        if (index !== -1) {
-            dispatch(setActiveElement('text'));
-            dispatch(setActiveElementIndex(index));
+        dragStartPos.current = { x: e.clientX, y: e.clientY };
+        hasMoved.current = false;
+        setIsDragging(false);
+    };
+
+    // Handle mouse move - check if dragging
+    const handleMouseMove = (e: React.MouseEvent) => {
+        if (!dragStartPos.current) return;
+        
+        const deltaX = Math.abs(e.clientX - dragStartPos.current.x);
+        const deltaY = Math.abs(e.clientY - dragStartPos.current.y);
+        const DRAG_THRESHOLD = 5; // pixels
+        
+        if (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD) {
+            hasMoved.current = true;
+            setIsDragging(true);
         }
+    };
+
+    // Handle mouse up - select if click, do nothing if drag
+    const handleMouseUp = (e: React.MouseEvent) => {
+        if (e.button !== 0) return; // Only handle left mouse button
+        e.stopPropagation();
+        
+        // Only select if it was a click (no movement)
+        if (!hasMoved.current && dragStartPos.current) {
+            const index = textElements.findIndex(t => t.id === item.id);
+            if (index !== -1) {
+                dispatch(setActiveElement('text'));
+                dispatch(setActiveElementIndex(index));
+            }
+        }
+        
+        // Reset drag state
+        dragStartPos.current = null;
+        hasMoved.current = false;
+        setIsDragging(false);
     };
 
     // TODO: add more options for text
@@ -110,12 +147,21 @@ export const TextSequenceItem: React.FC<{ item: TextElement; options: SequenceIt
                     display: "flex",
                     flexDirection: "column",
                     alignItems: align === 'center' ? 'center' : align === 'right' ? 'flex-end' : 'flex-start',
-                    cursor:"move",
+                    cursor: isDragging ? "grabbing" : "grab",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
                 }}
-                onClick={handleClick}
-                // onMouseDown={handleMouseDown}
-                // onMouseMove={handleMouseMove}
-                // onMouseUp={handleMouseUp}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
+                onMouseUp={handleMouseUp}
+                onMouseLeave={() => {
+                    // Reset if mouse leaves while dragging
+                    dragStartPos.current = null;
+                    hasMoved.current = false;
+                    setIsDragging(false);
+                }}
+                onDragStart={(e) => e.preventDefault()}
+                draggable={false}
                 className="designcombo_textLayer"
             >
                 {textLines.map((line, index) => (

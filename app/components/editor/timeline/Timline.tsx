@@ -521,13 +521,8 @@ export const Timeline = () => {
                     const originalPositionDuration = oldPositionEnd - clip.positionStart;
                     const originalSourceDuration = clip.endTime - clip.startTime;
                     
-                    // For audio clips: constrain to not exceed maximum video duration and apply snapping
+                    // For audio clips: apply snapping to video clip ends (but don't cap to video duration)
                     if (clip.type === 'audio') {
-                        const maxVideoDuration = getMaxVideoDuration();
-                        // Cap audio to not exceed video duration
-                        if (maxVideoDuration > 0) {
-                            newPositionEnd = Math.min(newPositionEnd, maxVideoDuration);
-                        }
                         // Apply snapping to video clip ends
                         const allMediaFiles = currentFiles.filter(m => m.type === 'video' || m.type === 'audio');
                         newPositionEnd = snapTime(newPositionEnd, clip, allMediaFiles, true);
@@ -603,7 +598,7 @@ export const Timeline = () => {
                     )));
                 }
             }
-        }, 50), [resizingItem, dispatch, fps, timelineZoom, getMaxVideoDuration, snapTime]);
+        }, 50), [resizingItem, dispatch, fps, timelineZoom, snapTime]);
 
     const handleResizeMove = (e: React.PointerEvent) => {
         if (!resizingItem) return;

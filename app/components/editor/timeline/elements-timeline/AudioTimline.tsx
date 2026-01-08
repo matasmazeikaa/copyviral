@@ -111,13 +111,7 @@ export default function AudioTimeline() {
     const handleRightResize = (clip: MediaFile, target: HTMLElement, width: number) => {
         let newPositionEnd = clip.positionStart + (width / timelineZoom);
         
-        // Constrain to not exceed maximum video duration
-        const maxVideoDuration = getMaxVideoDuration();
-        if (maxVideoDuration > 0) {
-            newPositionEnd = Math.min(newPositionEnd, maxVideoDuration);
-        }
-        
-        // Apply snapping to video clip ends
+        // Apply snapping to video clip ends (but don't cap to video duration - audio can be longer)
         const allMediaFiles = mediaFilesRef.current.filter(m => m.type === 'video' || m.type === 'audio');
         newPositionEnd = snapTime(newPositionEnd, clip, allMediaFiles);
         
