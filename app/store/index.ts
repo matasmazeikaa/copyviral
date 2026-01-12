@@ -11,7 +11,7 @@ import toast from 'react-hot-toast';
 // Create IndexedDB database for files and projects
 const setupDB = async () => {
     if (typeof window === 'undefined') return null;
-    const db = await openDB('InstaEdit-files', 1, {
+    const db = await openDB('CopyViral-files', 1, {
         upgrade(db) {
             db.createObjectStore('files', { keyPath: 'id' });
             db.createObjectStore('projects', { keyPath: 'id' });
@@ -24,7 +24,7 @@ const setupDB = async () => {
 export const loadState = () => {
     if (typeof window === 'undefined') return undefined;
     try {
-        const serializedState = localStorage.getItem('InstaEdit-state');
+        const serializedState = localStorage.getItem('CopyViral-state');
         if (serializedState === null) return undefined;
         return JSON.parse(serializedState);
     } catch (error) {
@@ -39,7 +39,7 @@ const saveState = (state: any) => {
     if (typeof window === 'undefined') return;
     try {
         const serializedState = JSON.stringify(state);
-        localStorage.setItem('InstaEdit-state', serializedState);
+        localStorage.setItem('CopyViral-state', serializedState);
     } catch (error) {
         console.error('Error saving state to localStorage:', error);
     }

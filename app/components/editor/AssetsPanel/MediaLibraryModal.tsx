@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { LibraryItem } from "@/app/types";
-import { listUserMediaFiles, uploadMediaFile } from "@/app/services/mediaLibraryService";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { LibraryItem, MediaType } from "@/app/types";
+import { listUserMediaFiles } from "@/app/services/mediaLibraryService";
 import { useAuth } from "@/app/contexts/AuthContext";
-import { X, Loader2, Upload } from "lucide-react";
+import { X, Loader2, Upload, CheckCircle, XCircle, Film, Image as ImageIcon, Music } from "lucide-react";
 import toast from "react-hot-toast";
+import { createClient } from "@/app/utils/supabase/client";
+import { categorizeFile } from "@/app/utils/utils";
 
 interface MediaLibraryModalProps {
     isOpen: boolean;
@@ -13,12 +15,25 @@ interface MediaLibraryModalProps {
     onAddToTimeline: (items: LibraryItem[]) => void;
 }
 
+interface UploadingFile {
+    id: string;
+    file: File;
+    name: string;
+    progress: number;
+    status: 'uploading' | 'completed' | 'error';
+    type: MediaType;
+    error?: string;
+}
+
+const STORAGE_BUCKET = 'media-library';
+const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB
+
 export function MediaLibraryModal({ isOpen, onClose, onAddToTimeline }: MediaLibraryModalProps) {
     const { user } = useAuth();
     const [items, setItems] = useState<LibraryItem[]>([]);
     const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
     const [isLoading, setIsLoading] = useState(false);
-    const [isUploading, setIsUploading] = useState(false);
+    const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
@@ -26,6 +41,17 @@ export function MediaLibraryModal({ isOpen, onClose, onAddToTimeline }: MediaLib
             loadLibraryItems();
         }
     }, [isOpen, user]);
+
+    // Clean up completed uploads after a delay
+    useEffect(() => {
+        const completedUploads = uploadingFiles.filter(f => f.status === 'completed');
+        if (completedUploads.length > 0) {
+            const timer = setTimeout(() => {
+                setUploadingFiles(prev => prev.filter(f => f.status !== 'completed'));
+            }, 2000);
+            return () => clearTimeout(timer);
+        }
+    }, [uploadingFiles]);
 
     const loadLibraryItems = async () => {
         if (!user) return;
@@ -62,6 +88,106 @@ export function MediaLibraryModal({ isOpen, onClose, onAddToTimeline }: MediaLib
         onClose();
     };
 
+    const uploadFileWithProgress = useCallback(async (
+        file: File,
+        uploadId: string,
+        userId: string
+    ): Promise<LibraryItem | null> => {
+        const supabase = createClient();
+        const userFolder = userId;
+        const fileId = crypto.randomUUID();
+        const fileExt = file.name.split('.').pop() || 'mp4';
+        const fileName = `${fileId}.${fileExt}`;
+        const filePath = `${userFolder}/${fileName}`;
+
+        // Check file size
+        if (file.size > MAX_FILE_SIZE) {
+            setUploadingFiles(prev => prev.map(f => 
+                f.id === uploadId 
+                    ? { ...f, status: 'error', error: 'File exceeds 5GB limit' }
+                    : f
+            ));
+            return null;
+        }
+
+        try {
+            // Use XMLHttpRequest for progress tracking
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                throw new Error('Not authenticated');
+            }
+
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+            const uploadUrl = `${supabaseUrl}/storage/v1/object/${STORAGE_BUCKET}/${filePath}`;
+
+            await new Promise<void>((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                
+                xhr.upload.addEventListener('progress', (event) => {
+                    if (event.lengthComputable) {
+                        const percentComplete = Math.round((event.loaded / event.total) * 100);
+                        setUploadingFiles(prev => prev.map(f => 
+                            f.id === uploadId 
+                                ? { ...f, progress: percentComplete }
+                                : f
+                        ));
+                    }
+                });
+
+                xhr.addEventListener('load', () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve();
+                    } else {
+                        reject(new Error(`Upload failed: ${xhr.statusText}`));
+                    }
+                });
+
+                xhr.addEventListener('error', () => {
+                    reject(new Error('Upload failed'));
+                });
+
+                xhr.open('POST', uploadUrl);
+                xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
+                xhr.setRequestHeader('x-upsert', 'false');
+                xhr.send(file);
+            });
+
+            // Get signed URL for the uploaded file
+            const { data: signedUrlData, error: urlError } = await supabase.storage
+                .from(STORAGE_BUCKET)
+                .createSignedUrl(filePath, 3600);
+
+            if (urlError) {
+                throw urlError;
+            }
+
+            // Update status to completed
+            setUploadingFiles(prev => prev.map(f => 
+                f.id === uploadId 
+                    ? { ...f, status: 'completed', progress: 100 }
+                    : f
+            ));
+
+            return {
+                id: fileId,
+                name: file.name,
+                url: signedUrlData.signedUrl,
+                status: 'completed',
+                type: categorizeFile(file.type),
+                size: file.size,
+                createdAt: new Date().toISOString(),
+            };
+        } catch (error: any) {
+            console.error('Upload error:', error);
+            setUploadingFiles(prev => prev.map(f => 
+                f.id === uploadId 
+                    ? { ...f, status: 'error', error: error.message || 'Upload failed' }
+                    : f
+            ));
+            return null;
+        }
+    }, []);
+
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
         if (files.length === 0) return;
@@ -72,34 +198,56 @@ export function MediaLibraryModal({ isOpen, onClose, onAddToTimeline }: MediaLib
             return;
         }
 
-        setIsUploading(true);
-        let successCount = 0;
-        let errorCount = 0;
+        // Create upload entries for all files
+        const newUploads: UploadingFile[] = files.map(file => ({
+            id: crypto.randomUUID(),
+            file,
+            name: file.name,
+            progress: 0,
+            status: 'uploading' as const,
+            type: categorizeFile(file.type),
+        }));
 
-        for (const file of files) {
-            try {
-                await uploadMediaFile(file, user.id);
-                successCount++;
-            } catch (error: any) {
-                console.error('Error uploading file:', error);
-                toast.error(`Failed to upload ${file.name}: ${error.message}`);
-                errorCount++;
-            }
-        }
+        setUploadingFiles(prev => [...prev, ...newUploads]);
+        e.target.value = "";
+
+        // Upload all files in parallel
+        const uploadPromises = newUploads.map(upload => 
+            uploadFileWithProgress(upload.file, upload.id, user.id)
+        );
+
+        const results = await Promise.all(uploadPromises);
+        const successCount = results.filter(r => r !== null).length;
 
         if (successCount > 0) {
-            toast.success(`Successfully uploaded ${successCount} file(s)`);
+            toast.success(`Successfully uploaded ${successCount} file${successCount > 1 ? 's' : ''}`);
             // Reload library items
             await loadLibraryItems();
         }
-
-        setIsUploading(false);
-        e.target.value = "";
     };
 
     const handleUploadClick = () => {
         fileInputRef.current?.click();
     };
+
+    const removeUploadingFile = (uploadId: string) => {
+        setUploadingFiles(prev => prev.filter(f => f.id !== uploadId));
+    };
+
+    const getFileIcon = (type: MediaType) => {
+        switch (type) {
+            case 'video':
+                return <Film className="w-4 h-4" />;
+            case 'image':
+                return <ImageIcon className="w-4 h-4" />;
+            case 'audio':
+                return <Music className="w-4 h-4" />;
+            default:
+                return <Film className="w-4 h-4" />;
+        }
+    };
+
+    const isUploading = uploadingFiles.some(f => f.status === 'uploading');
 
     if (!isOpen) return null;
 
@@ -142,6 +290,82 @@ export function MediaLibraryModal({ isOpen, onClose, onAddToTimeline }: MediaLib
                         </button>
                     </div>
                 </div>
+
+                {/* Upload Progress Section */}
+                {uploadingFiles.length > 0 && (
+                    <div className="p-4 border-b border-slate-800 bg-slate-900/50">
+                        <div className="flex flex-wrap gap-3">
+                            {uploadingFiles.map((upload) => (
+                                <div
+                                    key={upload.id}
+                                    className={`relative flex items-center gap-3 p-3 rounded-lg border transition-all min-w-[200px] max-w-[280px] ${
+                                        upload.status === 'completed'
+                                            ? 'bg-emerald-500/10 border-emerald-500/30'
+                                            : upload.status === 'error'
+                                            ? 'bg-red-500/10 border-red-500/30'
+                                            : 'bg-slate-800/50 border-slate-700'
+                                    }`}
+                                >
+                                    {/* File type icon */}
+                                    <div className={`flex-shrink-0 w-10 h-10 rounded-lg flex items-center justify-center ${
+                                        upload.status === 'completed'
+                                            ? 'bg-emerald-500/20 text-emerald-400'
+                                            : upload.status === 'error'
+                                            ? 'bg-red-500/20 text-red-400'
+                                            : 'bg-blue-500/20 text-blue-400'
+                                    }`}>
+                                        {upload.status === 'completed' ? (
+                                            <CheckCircle className="w-5 h-5" />
+                                        ) : upload.status === 'error' ? (
+                                            <XCircle className="w-5 h-5" />
+                                        ) : (
+                                            getFileIcon(upload.type)
+                                        )}
+                                    </div>
+
+                                    {/* File info and progress */}
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-xs text-slate-300 truncate font-medium" title={upload.name}>
+                                            {upload.name}
+                                        </p>
+                                        {upload.status === 'uploading' && (
+                                            <div className="mt-1.5">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-[10px] text-slate-400">Uploading</span>
+                                                    <span className="text-[10px] font-mono text-blue-400">{upload.progress}%</span>
+                                                </div>
+                                                <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                                    <div 
+                                                        className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-300"
+                                                        style={{ width: `${upload.progress}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                        {upload.status === 'completed' && (
+                                            <p className="text-[10px] text-emerald-400 mt-1">Complete</p>
+                                        )}
+                                        {upload.status === 'error' && (
+                                            <p className="text-[10px] text-red-400 mt-1 truncate" title={upload.error}>
+                                                {upload.error || 'Upload failed'}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Close button for errors */}
+                                    {upload.status === 'error' && (
+                                        <button
+                                            onClick={() => removeUploadingFile(upload.id)}
+                                            className="flex-shrink-0 text-slate-500 hover:text-slate-300 transition-colors"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 <div className="flex-1 overflow-y-auto p-6">
                     {isLoading ? (

@@ -8,3 +8,75 @@
 .moveable-line.moveable-direction  {
     display: none !important;
 }
+
+/* Render loader animations */
+@keyframes gradient-x {
+    0%, 100% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+}
+
+.animate-gradient-x {
+    animation: gradient-x 2s ease infinite;
+}
+    
+/* AI Loading animations */
+@keyframes spin-slow {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.animate-spin-slow {
+    animation: spin-slow 8s linear infinite;
+}
+
+@keyframes float {
+    0%, 100% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+.animate-float {
+    animation: float 3s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200% 0;
+    }
+    100% {
+        background-position: 200% 0;
+    }
+}
+
+.animate-shimmer {
+    animation: shimmer 2s linear infinite;
+    background-size: 200% 100%;
+}
+
+/* Zoom out the editor interface to fit better at 100% browser zoom */
+.editor-container {
+    transform: scale(0.92);
+    transform-origin: top left;
+    width: calc(100vw / 0.92); /* Compensate for 0.92 scale */
+    height: calc(100vh / 0.92); /* Compensate for 0.92 scale */
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+}
+
+/* Ensure timeline is always visible and not cut off */
+.editor-container > div:last-child {
+    position: relative;
+    z-index: 10;
+}

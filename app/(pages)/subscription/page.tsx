@@ -1,13 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/app/contexts/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { 
-  checkAIUsage, 
   createCheckoutSession, 
   openCustomerPortal,
-  UsageInfo,
   PRICE_IDS,
   PLANS 
 } from '@/app/services/subscriptionService';
@@ -30,16 +28,22 @@ interface SubscriptionData {
   subscriptionCurrentPeriodEnd: string | null;
 }
 
+// Module-level cache to prevent duplicate fetches across StrictMode remounts
+let subscriptionCache: { userId: string; data: SubscriptionData; timestamp: number } | null = null
+const CACHE_TTL = 5000 // 5 seconds
+
 export default function SubscriptionPage() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, usageInfo, refreshUsage } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [usageInfo, setUsageInfo] = useState<UsageInfo | null>(null);
   const [subscriptionData, setSubscriptionData] = useState<SubscriptionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+  
+  // Track if we've already fetched for this user
+  const lastFetchedUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     // Handle success/cancel from Stripe
@@ -48,48 +52,62 @@ export default function SubscriptionPage() {
 
     if (success === 'true') {
       toast.success('Subscription activated! Welcome to Pro 🎉');
+      // Clear caches to force refetch after subscription change
+      subscriptionCache = null;
+      lastFetchedUserIdRef.current = null;
+      // Refresh usage info after successful subscription (force = true bypasses cache)
+      refreshUsage(true);
       // Clean URL
       router.replace('/subscription');
     } else if (canceled === 'true') {
       toast('Checkout canceled', { icon: '↩️' });
       router.replace('/subscription');
     }
-  }, [searchParams, router]);
+  }, [searchParams, router, refreshUsage]);
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    const userId = user?.id;
+    
+    if (!authLoading && !userId) {
       router.push('/login?redirect=/subscription');
       return;
     }
 
-    if (user) {
+    // Only fetch if user ID changed
+    if (userId && userId !== lastFetchedUserIdRef.current) {
+      lastFetchedUserIdRef.current = userId;
+      
+      // Check module-level cache first (handles StrictMode remounts)
+      const now = Date.now()
+      if (subscriptionCache && subscriptionCache.userId === userId && subscriptionCache.timestamp > now - CACHE_TTL) {
+        setSubscriptionData(subscriptionCache.data);
+        setLoading(false);
+        return;
+      }
+      
+      // Fetch subscription details from Supabase (usageInfo comes from AuthContext)
+      const loadSubscriptionData = async () => {
+        try {
+          const supabase = createClient();
+          const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('subscriptionStatus, subscriptionCurrentPeriodEnd')
+            .eq('id', userId)
+            .single();
+
+          if (profile) {
+            subscriptionCache = { userId, data: profile, timestamp: Date.now() };
+            setSubscriptionData(profile);
+          }
+        } catch (error) {
+          console.error('Error loading subscription data:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
       loadSubscriptionData();
     }
-  }, [user, authLoading, router]);
-
-  const loadSubscriptionData = async () => {
-    try {
-      // Fetch usage info
-      const usage = await checkAIUsage();
-      setUsageInfo(usage);
-
-      // Fetch subscription details from Supabase
-      const supabase = createClient();
-      const { data: profile } = await supabase
-        .from('user_profiles')
-        .select('subscriptionStatus, subscriptionCurrentPeriodEnd')
-        .eq('id', user!.id)
-        .single();
-
-      if (profile) {
-        setSubscriptionData(profile);
-      }
-    } catch (error) {
-      console.error('Error loading subscription data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [user?.id, authLoading, router]);
 
   const handleSubscribe = async (priceId: string) => {
     setCheckoutLoading(priceId);
@@ -111,7 +129,7 @@ export default function SubscriptionPage() {
     }
   };
 
-  if (authLoading || loading) {
+  if (authLoading || loading || (user && !usageInfo)) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-purple-500 animate-spin" />

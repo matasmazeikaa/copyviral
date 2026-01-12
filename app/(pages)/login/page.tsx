@@ -9,7 +9,7 @@ export default function LoginPage() {
   const { user, loading, signInWithGoogle } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirect = searchParams.get('redirect') || '/projects'
+  const redirect = searchParams.get('redirect') || '/'
   const error = searchParams.get('error')
   const errorDescription = searchParams.get('error_description')
 
@@ -52,7 +52,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-darkSurfacePrimary px-4">
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-white mb-2">InstaEdit</h1>
+          <h1 className="text-4xl font-bold text-white mb-2">CopyViral</h1>
           <p className="text-gray-400">Sign in to continue</p>
         </div>
 

@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const code = searchParams.get('code')
   const error = searchParams.get('error')
   const errorDescription = searchParams.get('error_description')
-  const next = searchParams.get('next') ?? '/projects'
+  const next = searchParams.get('next') ?? '/'
 
   // Handle OAuth errors from the provider
   if (error) {

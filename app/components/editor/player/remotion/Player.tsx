@@ -1,7 +1,7 @@
 import { Player, PlayerRef } from "@remotion/player";
 import Composition from "./sequence/composition";
-import { useAppSelector, useAppDispatch } from "@/app/store";
-import { useRef, useState, useEffect } from "react";
+import { useAppSelector } from "@/app/store";
+import { useRef, useEffect } from "react";
 import { setIsPlaying } from "@/app/store/slices/projectSlice";
 import { useDispatch } from "react-redux";
 
@@ -76,7 +76,7 @@ export const PreviewPlayer = () => {
     }, [isMuted]);
 
     return (
-        <div className="flex items-center justify-center w-full h-full p-4">
+        <div className="flex items-center justify-center w-full h-full p-4 max-w-[350px]">
             <div className="w-full max-w-md" style={{ aspectRatio: '9/16' }}>
                 <Player
                     ref={playerRef}

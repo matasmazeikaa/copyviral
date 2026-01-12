@@ -3,18 +3,35 @@
 import { useState, useEffect } from "react";
 import { useAppSelector, useAppDispatch } from "@/app/store";
 import { setMediaFiles, setTextElements } from "@/app/store/slices/projectSlice";
-import { MediaFile } from "@/app/types";
+import { MediaFile, TextElement } from "@/app/types";
 import GenerateVideoButton from "./render/GenerateVideoButton";
 import { calculateVideoFit } from "@/app/utils/videoDimensions";
 import MediaProperties from "./PropertiesSection/MediaProperties";
+import { Layers } from "lucide-react";
 
 export default function RightSidebar() {
     const { textElements, mediaFiles, activeElement, activeElementIndex } = useAppSelector((state) => state.projectState);
     const dispatch = useAppDispatch();
-    const [videoScale, setVideoScale] = useState<'fit' | 'fill' | '1:1'>('1:1');
+    const [videoScale, setVideoScale] = useState<'fit' | 'fill'>('fill');
     const [manualScale, setManualScale] = useState(1);
     const [variations, setVariations] = useState(1);
     const [timestampsOverlay, setTimestampsOverlay] = useState(false);
+    const [editAllText, setEditAllText] = useState(false);
+
+    // Helper function to update text elements (single or all based on editAllText mode)
+    const updateTextElements = (index: number, updates: Partial<TextElement>) => {
+        if (editAllText) {
+            // Apply changes to all text elements
+            const updated = textElements.map((t) => ({ ...t, ...updates }));
+            dispatch(setTextElements(updated));
+        } else {
+            // Apply changes only to the selected text element
+            const updated = textElements.map((t, i) =>
+                i === index ? { ...t, ...updates } : t
+            );
+            dispatch(setTextElements(updated));
+        }
+    };
 
     // Sync local state with media files when they change
     useEffect(() => {
@@ -23,11 +40,10 @@ export default function RightSidebar() {
             // Get the first video's scale settings to sync UI
             const firstVideo = videoFiles[0];
             if (firstVideo.aspectRatioFit) {
-                if (firstVideo.aspectRatioFit === '1:1') {
-                    setVideoScale('1:1');
-                } else if (firstVideo.aspectRatioFit === 'cover') {
+                if (firstVideo.aspectRatioFit === 'cover') {
                     setVideoScale('fill');
                 } else {
+                    // '16:9', 'original', '1:1' all map to 'fit'
                     setVideoScale('fit');
                 }
             }
@@ -38,12 +54,13 @@ export default function RightSidebar() {
     }, [mediaFiles]);
 
 
-    const handleVideoScaleChange = (scale: 'fit' | 'fill' | '1:1') => {
+    const handleVideoScaleChange = (scale: 'fit' | 'fill') => {
         setVideoScale(scale);
         // Update all video media files with the new scale and recalculate dimensions
         const updated = mediaFiles.map(media => {
             if (media.type === 'video' && media.originalWidth && media.originalHeight) {
-                const aspectRatioFit = scale === '1:1' ? '1:1' : scale === 'fill' ? 'cover' : 'original';
+                // 'fit' = 16:9 letterbox, 'fill' = cover (fill 9:16)
+                const aspectRatioFit = scale === 'fill' ? 'cover' : '16:9';
                 const zoom = media.zoom || 1.0;
                 const fitResult = calculateVideoFit(
                     media.originalWidth,
@@ -92,7 +109,7 @@ export default function RightSidebar() {
     };
 
     return (
-        <div className="w-80 bg-[#0f172a] border-l border-slate-800 flex flex-col h-full overflow-y-auto shrink-0">
+        <div className="w-72 bg-[#0f172a] border-l border-slate-800 flex flex-col h-full overflow-y-auto shrink-0">
             <div className="p-6 space-y-6">
                 {/* Media Properties - Show when video/audio is selected */}
                 {activeElement === 'media' && mediaFiles[activeElementIndex] && (
@@ -110,20 +127,38 @@ export default function RightSidebar() {
                     const index = activeElementIndex;
                     return (
                         <div>
-                            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                                Text Properties
-                            </h2>
+                            <div className="flex items-center justify-between mb-3">
+                                <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                    Text Properties
+                                </h2>
+                                {textElements.length > 1 && (
+                                    <button
+                                        onClick={() => setEditAllText(!editAllText)}
+                                        className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
+                                            editAllText
+                                                ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/25'
+                                                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
+                                        }`}
+                                        title="Apply changes to all text elements"
+                                    >
+                                        <Layers className="w-3 h-3" />
+                                        {editAllText ? 'Editing All' : 'Edit All'}
+                                    </button>
+                                )}
+                            </div>
+                            {editAllText && (
+                                <div className="mb-3 p-2 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                                    <p className="text-[10px] text-purple-300 font-medium">
+                                        Changes will apply to all {textElements.length} text elements
+                                    </p>
+                                </div>
+                            )}
                             <div className="space-y-3">
                                 <div>
                                     <label className="block text-xs font-medium text-slate-300 mb-2">Text Content</label>
                                     <textarea
                                         value={text.text}
-                                        onChange={(e) => {
-                                            const updated = textElements.map((t, i) =>
-                                                i === index ? { ...t, text: e.target.value } : t
-                                            );
-                                            dispatch(setTextElements(updated));
-                                        }}
+                                        onChange={(e) => updateTextElements(index, { text: e.target.value })}
                                         className="w-full p-2 text-sm font-medium text-white bg-slate-800 border border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y min-h-[3rem]"
                                         rows={Math.min(Math.max(text.text.split('\n').length, 1), 4)}
                                         wrap="soft"
@@ -135,12 +170,7 @@ export default function RightSidebar() {
                                         {['Inter', 'Impact', 'Marker', 'Serif'].map((font) => (
                                             <button
                                                 key={font}
-                                                onClick={() => {
-                                                    const updated = textElements.map((t, i) =>
-                                                        i === index ? { ...t, font: font } : t
-                                                    );
-                                                    dispatch(setTextElements(updated));
-                                                }}
+                                                onClick={() => updateTextElements(index, { font })}
                                                 className={`flex-1 py-1.5 px-2 text-xs font-bold rounded transition-colors ${
                                                     text.font === font || (!text.font && font === 'Inter')
                                                         ? 'bg-blue-600 text-white'
@@ -163,12 +193,7 @@ export default function RightSidebar() {
                                             max="1920"
                                             step="1"
                                             value={text.y}
-                                            onChange={(e) => {
-                                                const updated = textElements.map((t, i) =>
-                                                    i === index ? { ...t, y: Number(e.target.value) } : t
-                                                );
-                                                dispatch(setTextElements(updated));
-                                            }}
+                                            onChange={(e) => updateTextElements(index, { y: Number(e.target.value) })}
                                             className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                                         />
                                     </div>
@@ -182,12 +207,7 @@ export default function RightSidebar() {
                                             max="200"
                                             step="1"
                                             value={text.fontSize || 48}
-                                            onChange={(e) => {
-                                                const updated = textElements.map((t, i) =>
-                                                    i === index ? { ...t, fontSize: Number(e.target.value) } : t
-                                                );
-                                                dispatch(setTextElements(updated));
-                                            }}
+                                            onChange={(e) => updateTextElements(index, { fontSize: Number(e.target.value) })}
                                             className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                                         />
                                     </div>
@@ -198,12 +218,7 @@ export default function RightSidebar() {
                                         <input
                                             type="color"
                                             value={text.color || '#ffffff'}
-                                            onChange={(e) => {
-                                                const updated = textElements.map((t, i) =>
-                                                    i === index ? { ...t, color: e.target.value } : t
-                                                );
-                                                dispatch(setTextElements(updated));
-                                            }}
+                                            onChange={(e) => updateTextElements(index, { color: e.target.value })}
                                             className="w-full h-8 rounded border border-slate-700 cursor-pointer"
                                         />
                                     </div>
@@ -226,8 +241,9 @@ export default function RightSidebar() {
                                     ? 'bg-blue-600 text-white'
                                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                             }`}
+                            title="16:9 letterbox with black bars"
                         >
-                            Fit
+                            Fit (16:9)
                         </button>
                         <button
                             onClick={() => handleVideoScaleChange('fill')}
@@ -236,23 +252,14 @@ export default function RightSidebar() {
                                     ? 'bg-blue-600 text-white'
                                     : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                             }`}
+                            title="Fill entire 9:16 canvas"
                         >
-                            Fill (9:16)
-                        </button>
-                        <button
-                            onClick={() => handleVideoScaleChange('1:1')}
-                            className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors ${
-                                videoScale === '1:1'
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                            }`}
-                        >
-                            1:1
+                            Fill
                         </button>
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-400 mb-2">
-                            MANUAL SCALE: {manualScale}x
+                            SCALE: {Math.round(manualScale * 100)}%
                         </label>
                         <input
                             type="range"

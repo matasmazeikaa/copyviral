@@ -681,7 +681,7 @@ export const Timeline = () => {
     };
 
     return (
-        <div className="w-full h-80 bg-[#0f172a] border-t border-slate-800 flex flex-col shrink-0 z-30 z-1">
+        <div className="w-full h-full min-h-[200px] max-h-[300px] bg-[#0f172a] border-t border-slate-800 flex flex-col shrink-0 z-30 z-1">
             {/* Timeline Header */}
             <div className="h-10 bg-[#1e293b] border-b border-slate-800 flex items-center justify-between px-4 shrink-0">
                 <div className="flex items-center gap-2 text-slate-400">
@@ -767,7 +767,7 @@ export const Timeline = () => {
                     </span>
                     <div className="flex items-center gap-2 text-slate-400 bg-slate-900/50 px-3 py-1 rounded-md">
                         <Clock className="w-3 h-3" />
-                        <span className="text-xs font-mono text-blue-400">{currentFrame} / {totalDurationFrames} frames ({currentTime.toFixed(1)}s / {duration.toFixed(1)}s)</span>
+                        <span className="text-xs font-mono text-blue-400">({currentTime.toFixed(1)}s / {duration.toFixed(1)}s)</span>
                     </div>
                 </div>
             </div>

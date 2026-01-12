@@ -21,7 +21,7 @@ export const initialState: ProjectState = {
     activeElementIndex: 0,
     resolution: { width: 1080, height: 1920 },
     fps: 30,
-    aspectRatio: '9:16', // Always 9:16 for TokCut-style editor
+    aspectRatio: '9:16', // Always 9:16 for CopyViral-style editor
     history: [],
     future: [],
     exportSettings: {

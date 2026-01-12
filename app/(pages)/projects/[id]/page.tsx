@@ -16,6 +16,7 @@ import { useAuth } from "../../../contexts/AuthContext";
 import { createClient } from "../../../utils/supabase/client";
 import { addMediaLoading, updateMediaProgress, completeMediaLoading, errorMediaLoading } from "../../../store/slices/loadingSlice";
 import { loadProjectFromSupabase } from "../../../services/projectService";
+import UpgradeModal from "../../../components/UpgradeModal";
 
 export default function Project({ params }: { params: { id: string } }) {
     const { id } = params;
@@ -23,10 +24,15 @@ export default function Project({ params }: { params: { id: string } }) {
     const projectState = useAppSelector((state) => state.projectState);
     const { currentProjectId } = useAppSelector((state) => state.projects);
     const [isLoading, setIsLoading] = useState(true);
+    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const { currentTime, duration, fps } = useAppSelector((state) => state.projectState);
-    const { user } = useAuth();
+    const { user, usageInfo } = useAuth();
 
     const router = useRouter();
+    
+    // AI credits info
+    const creditsUsed = usageInfo?.used || 0;
+    const creditsLimit = typeof usageInfo?.limit === 'number' ? usageInfo.limit : 3;
     
     // Calculate frame info for status bar
     const currentFrame = Math.round(currentTime * fps);
@@ -163,83 +169,50 @@ export default function Project({ params }: { params: { id: string } }) {
 
 
     return (
-        <div className="flex flex-col h-screen select-none bg-[#0f172a]">
-            {/* Video Loading Progress Bar */}
-            <VideoLoader />
-            
-            {/* Loading screen */}
-            {isLoading && (
-                <div className="fixed inset-0 flex items-center bg-black bg-opacity-50 justify-center z-50">
-                    <div className="bg-black bg-opacity-70 p-6 rounded-lg flex flex-col items-center">
-                        <div className="w-16 h-16 border-4 border-t-white border-r-white border-opacity-30 border-t-opacity-100 rounded-full animate-spin"></div>
-                        <p className="mt-4 text-white text-lg">Loading project...</p>
+        <div className="fixed inset-0 overflow-hidden bg-[#0f172a]">
+            <div className="flex flex-col select-none bg-[#0f172a] editor-container">
+                {/* Video Loading Progress Bar */}
+                <VideoLoader />
+                
+                {/* Loading screen */}
+                {isLoading && (
+                    <div className="fixed inset-0 flex items-center bg-black bg-opacity-50 justify-center z-50">
+                        <div className="bg-black bg-opacity-70 p-6 rounded-lg flex flex-col items-center">
+                            <div className="w-16 h-16 border-4 border-t-white border-r-white border-opacity-30 border-t-opacity-100 rounded-full animate-spin"></div>
+                            <p className="mt-4 text-white text-lg">Loading project...</p>
+                        </div>
+                    </div>
+                )}
+                
+
+                {/* Main Content */}
+                <div className="flex flex-1 overflow-hidden min-h-0">
+                    {/* Left Sidebar */}
+                    <LeftSidebar />
+
+                    {/* Center - Video Preview */}
+                    <div className="flex items-center justify-center flex-col flex-1 overflow-hidden bg-[#0a0e1a] min-w-0">
+                        <PreviewPlayer />
+                    </div>
+
+                    {/* Right Sidebar */}
+                    <RightSidebar />
+                </div>
+
+                {/* Timeline at bottom - ensure it's always visible */}
+                <div className="flex flex-row border-t border-slate-800 bg-[#0f172a] z-1 flex-shrink-0 overflow-visible" style={{ zIndex: 1 }}>
+                    <div className="flex-1 flex flex-col !z-1 min-w-0 overflow-visible">
+                        <Timeline />
                     </div>
                 </div>
-            )}
-            
 
-            {/* Main Content */}
-            <div className="flex flex-1 overflow-hidden">
-                {/* Left Sidebar */}
-                <LeftSidebar />
-
-                {/* Center - Video Preview */}
-                <div className="flex items-center justify-center flex-col flex-1 overflow-hidden bg-[#0a0e1a]">
-                    <PreviewPlayer />
-                </div>
-
-                {/* Right Sidebar */}
-                <RightSidebar />
-            </div>
-
-            {/* Timeline at bottom */}
-            <div className="flex flex-row border-t border-slate-800 bg-[#0f172a] z-1" style={{ zIndex: 1 }}>
-                <div className="bg-[#0f172a] flex flex-col items-center justify-center">
-                    <div className="relative h-16 flex items-center justify-center w-16">
-                        <Image
-                            alt="Video"
-                            className="invert h-auto w-auto max-w-[30px] max-h-[30px]"
-                            height={30}
-                            width={30}
-                            src="https://www.svgrepo.com/show/532727/video.svg"
-                        />
-                    </div>
-                    <div className="relative h-16 flex items-center justify-center w-16">
-                        <Image
-                            alt="Audio"
-                            className="invert h-auto w-auto max-w-[30px] max-h-[30px]"
-                            height={30}
-                            width={30}
-                            src="https://www.svgrepo.com/show/532708/music.svg"
-                        />
-                    </div>
-                    <div className="relative h-16 flex items-center justify-center w-16">
-                        <Image
-                            alt="Image"
-                            className="invert h-auto w-auto max-w-[30px] max-h-[30px]"
-                            height={30}
-                            width={30}
-                            src="https://www.svgrepo.com/show/535454/image.svg"
-                        />
-                    </div>
-                    <div className="relative h-16 flex items-center justify-center w-16">
-                        <Image
-                            alt="Text"
-                            className="invert h-auto w-auto max-w-[30px] max-h-[30px]"
-                            height={30}
-                            width={30}
-                            src="https://www.svgrepo.com/show/535686/text.svg"
-                        />
-                    </div>
-                </div>
-                <div className="flex-1 flex flex-col !z-1">
-                    <Timeline />
-                    {/* Status Bar */}
-                    <div className="flex items-center justify-between px-4 py-2 bg-[#0f172a] border-t border-slate-800 text-xs text-slate-400">
-                        <span>Ready</span>
-                        <span>{currentFrame} / {totalFrames} frames ({formatTime(currentTime)} / {formatTime(duration)})</span>
-                    </div>
-                </div>
+                {/* Upgrade Modal */}
+                <UpgradeModal
+                    isOpen={showUpgradeModal}
+                    onClose={() => setShowUpgradeModal(false)}
+                    usedCount={creditsUsed}
+                    limitCount={creditsLimit}
+                />
             </div>
         </div>
     );

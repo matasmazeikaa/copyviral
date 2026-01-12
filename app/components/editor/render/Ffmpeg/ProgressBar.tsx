@@ -21,12 +21,23 @@ export default function FfmpegProgressBar({ ffmpeg }: Props) {
         };
     }, [ffmpeg]);
 
+    const percentage = (progress * 100).toFixed(1);
+
     return (
-        <div className="w-full bg-[#222] rounded-lg overflow-hidden h-4 border border-gray-700 mt-2">
-            <div
-                className="bg-green-500 h-full transition-all duration-200"
-                style={{ width: `${(progress * 100).toFixed(1)}%` }}
-            />
+        <div className="mt-2">
+            <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-slate-400">Progress</span>
+                <span className="text-xs font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">{percentage}%</span>
+            </div>
+            <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700/50">
+                <div
+                    className="h-full rounded-full bg-gradient-to-r from-purple-500 via-pink-500 to-purple-500 transition-all duration-300 ease-out shadow-lg shadow-purple-500/30 animate-gradient-x"
+                    style={{ 
+                        width: `${percentage}%`,
+                        backgroundSize: '200% 100%',
+                    }}
+                />
+            </div>
         </div>
     );
 }

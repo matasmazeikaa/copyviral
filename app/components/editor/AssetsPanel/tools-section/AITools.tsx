@@ -5,23 +5,189 @@ import { setMediaFiles, setTextElements, setFilesID } from "@/app/store/slices/p
 import { addMediaLoading, updateMediaProgress, completeMediaLoading, errorMediaLoading } from "@/app/store/slices/loadingSlice";
 import { MediaFile, TextElement } from "@/app/types";
 import { useAppDispatch } from "@/app/store";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
-import { Link, Loader2, Sparkles, Upload, Crown, Lock } from "lucide-react";
-import { analyzeReferenceVideo } from "@/app/services/geminiService";
+import { Link, Loader2, Sparkles, Upload, Crown, Lock, Wand2, Brain, Zap, Eye, Scissors, Type } from "lucide-react";
 import { DEFAULT_TEXT_STYLE } from "@/app/constants";
 import { storeFile } from "@/app/store";
 import { useAuth } from "@/app/contexts/AuthContext";
 import { incrementAIUsage } from "@/app/services/subscriptionService";
 import UpgradeModal from "@/app/components/UpgradeModal";
 
+// AI Loading Modal Component
+function AILoadingModal({ isOpen, stage }: { isOpen: boolean; stage: 'downloading' | 'analyzing' | 'processing' }) {
+  const [dots, setDots] = useState('');
+  const [sparklePositions, setSparklePositions] = useState<{ x: number; y: number; delay: number; scale: number }[]>([]);
+  
+  useEffect(() => {
+    if (!isOpen) return;
+    const interval = setInterval(() => {
+      setDots(prev => prev.length >= 3 ? '' : prev + '.');
+    }, 400);
+    return () => clearInterval(interval);
+  }, [isOpen]);
+
+  useEffect(() => {
+    // Generate random sparkle positions
+    const positions = Array.from({ length: 20 }, () => ({
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      delay: Math.random() * 2,
+      scale: 0.5 + Math.random() * 0.5
+    }));
+    setSparklePositions(positions);
+  }, []);
+
+  if (!isOpen) return null;
+
+  const stages = {
+    downloading: { icon: Link, text: 'Downloading video', color: 'from-blue-500 to-cyan-500' },
+    analyzing: { icon: Eye, text: 'AI analyzing cuts & timing', color: 'from-purple-500 to-pink-500' },
+    processing: { icon: Scissors, text: 'Processing results', color: 'from-pink-500 to-orange-500' }
+  };
+
+  const currentStage = stages[stage];
+  const StageIcon = currentStage.icon;
+
+  return (
+    <div 
+      className="fixed z-[9999] flex items-center justify-center"
+      style={{
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100vh',
+        margin: 0,
+        padding: 0
+      }}
+    >
+      {/* Full screen animated backdrop */}
+      <div 
+        className="absolute bg-slate-950/95 backdrop-blur-md"
+        style={{
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100%',
+          height: '100%'
+        }}
+      >
+        {/* Floating particles */}
+        {sparklePositions.map((pos, i) => (
+          <div
+            key={i}
+            className="absolute animate-pulse"
+            style={{
+              left: `${pos.x}%`,
+              top: `${pos.y}%`,
+              animationDelay: `${pos.delay}s`,
+              transform: `scale(${pos.scale})`
+            }}
+          >
+            <Sparkles className="w-3 h-3 text-purple-500/30" />
+          </div>
+        ))}
+      </div>
+
+      {/* Modal content */}
+      <div className="relative z-10">
+        {/* Outer glow rings - static, not spinning */}
+        <div className="absolute inset-0 -m-8 rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 blur-3xl animate-pulse" />
+        <div className="absolute inset-0 -m-4 rounded-full bg-gradient-to-r from-blue-500/10 to-purple-500/10 blur-2xl animate-pulse" style={{ animationDelay: '0.5s' }} />
+        
+        <div className="relative bg-gradient-to-b from-slate-900 to-slate-950 rounded-3xl border border-slate-700/50 p-8 shadow-2xl shadow-purple-500/20 min-w-[320px]">
+          {/* Static border glow - no spinning */}
+          <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
+            <div className="absolute inset-0 bg-gradient-to-r from-purple-500/30 via-pink-500/30 to-blue-500/30 opacity-50" />
+          </div>
+
+          {/* Content */}
+          <div className="relative flex flex-col items-center z-10">
+            {/* Animated icon container */}
+            <div className="relative mb-6">
+              {/* Rotating ring */}
+              <div className="absolute inset-0 -m-3 rounded-full border-2 border-dashed border-purple-500/30 animate-spin" style={{ animationDuration: '8s' }} />
+              <div className="absolute inset-0 -m-6 rounded-full border border-pink-500/20 animate-spin" style={{ animationDuration: '12s', animationDirection: 'reverse' }} />
+              
+              {/* Main icon */}
+              <div className={`relative w-20 h-20 rounded-2xl bg-gradient-to-br ${currentStage.color} flex items-center justify-center shadow-lg`}>
+                <StageIcon className="w-10 h-10 text-white animate-pulse" />
+                
+                {/* Orbiting sparkles */}
+                <div className="absolute inset-0 animate-spin" style={{ animationDuration: '3s' }}>
+                  <Sparkles className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 text-yellow-300" />
+                </div>
+                <div className="absolute inset-0 animate-spin" style={{ animationDuration: '3s', animationDelay: '1s' }}>
+                  <Zap className="absolute -right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-cyan-300" />
+                </div>
+                <div className="absolute inset-0 animate-spin" style={{ animationDuration: '3s', animationDelay: '2s' }}>
+                  <Brain className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 text-pink-300" />
+                </div>
+              </div>
+            </div>
+
+            {/* Loading text */}
+            <div className="text-center">
+              <h3 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+                  {currentStage.text}
+                </span>
+                <span className="text-purple-400 w-6 text-left">{dots}</span>
+              </h3>
+              <p className="text-sm text-slate-400">
+                Our AI is working its magic ✨
+              </p>
+            </div>
+
+            {/* Progress steps */}
+            <div className="flex items-center gap-2 mt-6">
+              {Object.keys(stages).map((s, i) => (
+                <div key={s} className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                    s === stage 
+                      ? 'bg-gradient-to-r from-purple-500 to-pink-500 scale-125 animate-pulse' 
+                      : Object.keys(stages).indexOf(stage) > i 
+                        ? 'bg-green-500' 
+                        : 'bg-slate-600'
+                  }`} />
+                  {i < 2 && <div className="w-6 h-px bg-slate-700" />}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface AnalyzeVideoResult {
+  durations: number[];
+  textLayers: Array<{
+    content?: string;
+    start?: number;
+    duration?: number;
+    verticalPos?: number;
+    fontSize?: number;
+  }>;
+  settings: {
+    videoMode?: string;
+    videoScale?: number;
+  };
+}
+
 export default function AITools() {
   const dispatch = useAppDispatch();
   const { filesID, textElements } = useAppSelector((state) => state.projectState);
   const { user, usageInfo, canUseAI, isPremium, refreshUsage } = useAuth();
   const [isImporting, setIsImporting] = useState(false);
+  const [loadingStage, setLoadingStage] = useState<'downloading' | 'analyzing' | 'processing'>('downloading');
   const [referenceUrl, setReferenceUrl] = useState("");
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   const handleImportReferenceVideo = async (file: File) => {
     // Check if user is logged in
@@ -37,12 +203,29 @@ export default function AITools() {
     }
 
     setIsImporting(true);
+    setLoadingStage('analyzing');
     try {
-      const result = await analyzeReferenceVideo(file);
+      // Call the API route to analyze the video
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/ai/analyze-video", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw { message: errorData.error, code: errorData.code };
+      }
+
+      const result: AnalyzeVideoResult = await response.json();
+      
+      setLoadingStage('processing');
       
       // Increment AI usage after successful generation
       await incrementAIUsage('video_analysis', { fileName: file.name });
-      await refreshUsage();
+      await refreshUsage(true); // Force refresh to get updated usage count
 
       // Store the video file for audio extraction
       const audioFileId = crypto.randomUUID();
@@ -205,6 +388,7 @@ export default function AITools() {
     }
 
     setIsImporting(true);
+    setLoadingStage('downloading');
     try {
       // Call API route to scrape the video
       const response = await fetch('/api/scrape-video', {
@@ -269,115 +453,147 @@ export default function AITools() {
 
   return (
     <>
-      {/* Reference Upload */}
-      <div className="bg-slate-800/30 border border-slate-800 rounded-xl p-4 space-y-3">
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-purple-400" />
-            <h3 className="text-xs font-bold text-purple-200">
-              AI REFERENCE COPY
-            </h3>
+      {/* AI Reference Copy - Magical Container */}
+      <div 
+        className="relative group"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+      >
+        {/* Animated gradient border */}
+        <div className="absolute -inset-[1px] bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 rounded-xl opacity-60 blur-[2px] group-hover:opacity-100 transition-opacity duration-500" 
+          style={{ 
+            backgroundSize: '200% 200%',
+            animation: 'gradient-x 3s ease infinite'
+          }} 
+        />
+        
+        {/* Inner container */}
+        <div className="relative bg-gradient-to-br from-slate-900 via-slate-900 to-purple-950/50 rounded-xl p-4 space-y-3 overflow-hidden">
+          {/* Background sparkle effects */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div className={`absolute top-2 right-4 transition-all duration-700 ${isHovered ? 'opacity-100 scale-100' : 'opacity-40 scale-90'}`}>
+              <Sparkles className="w-3 h-3 text-purple-400/60 animate-pulse" />
+            </div>
+            <div className={`absolute top-8 right-12 transition-all duration-700 delay-100 ${isHovered ? 'opacity-100 scale-100' : 'opacity-30 scale-90'}`}>
+              <Sparkles className="w-2 h-2 text-pink-400/50 animate-pulse" style={{ animationDelay: '0.5s' }} />
+            </div>
+            <div className={`absolute bottom-12 left-4 transition-all duration-700 delay-200 ${isHovered ? 'opacity-100 scale-100' : 'opacity-20 scale-90'}`}>
+              <Zap className="w-2 h-2 text-cyan-400/40 animate-pulse" style={{ animationDelay: '1s' }} />
+            </div>
+            {/* Gradient orb */}
+            <div className={`absolute -top-10 -right-10 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl transition-all duration-700 ${isHovered ? 'opacity-80 scale-110' : 'opacity-40'}`} />
           </div>
-          {isPremium ? (
-            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30">
-              <Crown className="w-3 h-3 text-yellow-400" />
-              <span className="text-[10px] font-medium text-purple-300">Pro</span>
-            </span>
-          ) : user && (
-            <span className="text-[10px] text-slate-400">
-              {usedCount}/{limitCount} used
-            </span>
-          )}
-        </div>
-        <p className="text-[10px] text-slate-500 leading-tight">
-          Upload a video or paste a URL (TikTok, Instagram, YouTube) to copy its
-          cuts and text pacing automatically.
-        </p>
 
-        {/* Usage warning for free users */}
-        {user && !isPremium && !canUseAI && (
-          <div className="flex items-center gap-2 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
-            <Lock className="w-3 h-3 text-amber-400" />
-            <span className="text-[10px] text-amber-300">
-              Limit reached.{" "}
-              <button 
-                onClick={() => setShowUpgradeModal(true)}
-                className="underline hover:text-amber-200"
-              >
-                Upgrade to Pro
-              </button>
-            </span>
-          </div>
-        )}
-
-        <label
-          className={`w-full py-3 border border-dashed rounded-lg flex items-center justify-center gap-2 cursor-pointer transition-all ${
-            isImporting
-              ? "bg-purple-500/10 cursor-wait border-slate-700"
-              : !canUseAI && user
-              ? "bg-slate-800/50 border-slate-700 cursor-not-allowed opacity-60"
-              : "border-slate-700 hover:bg-slate-800 hover:border-purple-500/50"
-          }`}
-        >
-          {isImporting ? (
-            <>
-              <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
-              <span className="text-xs font-bold text-purple-300">
-                Analyzing...
+          {/* Header */}
+          <div className="relative flex items-center justify-between mb-1">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
+                  <Wand2 className="w-3.5 h-3.5 text-white" />
+                </div>
+                <div className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold bg-gradient-to-r from-purple-300 via-pink-300 to-purple-300 bg-clip-text text-transparent">
+                  AI REFERENCE COPY
+                </h3>
+                <p className="text-[9px] text-purple-400/70 font-medium">Magic video analysis</p>
+              </div>
+            </div>
+            {isPremium ? (
+              <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-gradient-to-r from-purple-500/30 to-pink-500/30 border border-purple-400/30 shadow-lg shadow-purple-500/10">
+                <Crown className="w-3 h-3 text-yellow-400" />
+                <span className="text-[10px] font-bold text-purple-200">Pro</span>
               </span>
-            </>
-          ) : (
-            <>
-              {!canUseAI && user ? (
-                <Lock className="w-4 h-4 text-slate-500" />
-              ) : (
-                <Upload className="w-4 h-4 text-slate-400" />
-              )}
-              <span className="text-xs font-bold text-slate-300">
-                Upload Reference
+            ) : user && (
+              <span className="text-[10px] text-slate-400 bg-slate-800/50 px-2 py-1 rounded-full">
+                {usedCount}/{limitCount} used
               </span>
-            </>
-          )}
-          <input
-            type="file"
-            accept="video/*"
-            className="hidden"
-            onChange={handleReferenceUpload}
-            disabled={isImporting || (!canUseAI && !!user)}
-          />
-        </label>
-
-        <div className="flex items-center gap-2">
-          <div className="flex-1 relative">
-            <Link className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
-            <input
-              type="text"
-              value={referenceUrl}
-              onChange={(e) => setReferenceUrl(e.target.value)}
-              placeholder="Paste TikTok/Instagram/YouTube URL"
-              disabled={isImporting || (!canUseAI && !!user)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !isImporting && canUseAI) {
-                  handleUrlImport();
-                }
-              }}
-              className="w-full pl-7 pr-2 py-2 text-xs bg-slate-900/50 border border-slate-700 rounded-lg text-slate-300 placeholder-slate-600 focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-          </div>
-          <button
-            onClick={handleUrlImport}
-            disabled={isImporting || !referenceUrl.trim() || (!canUseAI && !!user)}
-            className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-          >
-            {isImporting ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <Link className="w-3 h-3" />
             )}
-            Import
-          </button>
+          </div>
+
+          {/* Description with feature pills */}
+          <div className="relative">
+            <p className="text-[11px] text-slate-400 leading-relaxed mb-2">
+              Transform any viral video into your template. Our AI extracts timing, cuts, and text positions automatically.
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { icon: Scissors, label: 'Cut Detection', color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20' },
+                { icon: Type, label: 'Text Timing', color: 'text-pink-400 bg-pink-500/10 border-pink-500/20' },
+                { icon: Eye, label: 'Visual Analysis', color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
+              ].map(({ icon: Icon, label, color }) => (
+                <span key={label} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-medium border ${color}`}>
+                  <Icon className="w-2.5 h-2.5" />
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Usage warning for free users */}
+          {user && !isPremium && !canUseAI && (
+            <div className="relative flex items-center gap-2 p-2.5 rounded-lg bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30">
+              <div className="w-6 h-6 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                <Lock className="w-3 h-3 text-amber-400" />
+              </div>
+              <div className="flex-1">
+                <span className="text-[11px] text-amber-200 font-medium">Magic limit reached</span>
+                <button 
+                  onClick={() => setShowUpgradeModal(true)}
+                  className="ml-2 text-[11px] text-amber-400 hover:text-amber-300 font-bold underline underline-offset-2"
+                >
+                  Unlock unlimited →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* URL Input Section */}
+          <div className="relative space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="flex-1 relative group/input">
+                <div className="absolute -inset-[1px] bg-gradient-to-r from-purple-500/50 to-pink-500/50 rounded-lg opacity-0 group-focus-within/input:opacity-100 blur-sm transition-opacity" />
+                <div className="relative flex items-center">
+                  <Link className="absolute left-3 w-3.5 h-3.5 text-slate-500" />
+                  <input
+                    type="text"
+                    value={referenceUrl}
+                    onChange={(e) => setReferenceUrl(e.target.value)}
+                    placeholder="Paste TikTok, Instagram, or YouTube URL"
+                    disabled={isImporting || (!canUseAI && !!user)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !isImporting && canUseAI) {
+                        handleUrlImport();
+                      }
+                    }}
+                    className="w-full pl-9 pr-3 py-2.5 text-xs bg-slate-900/80 border border-slate-700/50 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-purple-500/50 focus:bg-slate-900 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={handleUrlImport}
+                disabled={isImporting || !referenceUrl.trim() || (!canUseAI && !!user)}
+                className="relative px-4 py-2.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 shadow-lg shadow-purple-500/20 hover:shadow-purple-500/30 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Analyze
+              </button>
+            </div>
+
+            {/* Supported platforms */}
+            <div className="flex items-center justify-center gap-3 pt-1">
+              <span className="text-[9px] text-slate-500">Works with:</span>
+              {['TikTok', 'Instagram', 'YouTube'].map((platform) => (
+                <span key={platform} className="text-[9px] text-slate-400 font-medium">{platform}</span>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* AI Loading Modal */}
+      <AILoadingModal isOpen={isImporting} stage={loadingStage} />
 
       {/* Upgrade Modal */}
       <UpgradeModal 

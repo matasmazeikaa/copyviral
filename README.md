@@ -1,16 +1,17 @@
 ## Overview
 
-This is an online video editor built with nextjs, remotion for real-time preview and ffmpeg (web assembly port) for high-quality render.
+CopyViral is an AI-powered video editor that helps you copy viral video styles and recreate trending content. Built with Next.js, Remotion for real-time preview, and FFmpeg (WebAssembly) for high-quality rendering.
 
 ## Features
 
-- 🎞️ Real-time Preview: See immediate previews of edits.
-- 🧰 Render with ffmpeg (web assembly port) with various options supports up to 1080p export.
-- 🕹️ Interactive Timeline Editor: Precisely arrange, trim, and control media through a custom-built timeline.
-- ✂️ Element Utilities: Easily split, duplicate, and manage individual media layers.
-- 🖼️ Flexible Media Support: Import and mix videos, audio tracks, images, and text elements seamlessly.
-- 🛠️ Advanced Element Controls: Adjust properties like position, opacity, z-index and volume per element.
-- ⌨️ Keyboard Shortcuts: Quickly play, mute, move in time with arrows, split, duplicate, etc .
+- 🤖 AI Reference Copy: Analyze viral videos and automatically copy their cuts, pacing, and style
+- 🎞️ Real-time Preview: See immediate previews of edits
+- 🧰 Render with FFmpeg: High-quality export up to 1080p
+- 🕹️ Interactive Timeline Editor: Precisely arrange, trim, and control media
+- ✂️ Element Utilities: Easily split, duplicate, and manage media layers
+- 🖼️ Flexible Media Support: Import videos, audio, images, and text seamlessly
+- 🛠️ Advanced Controls: Adjust position, opacity, z-index, and volume per element
+- ⌨️ Keyboard Shortcuts: Quick actions for play, mute, split, duplicate, etc.
 
 ![Alt Text](/images/image.png)
 
@@ -36,10 +37,10 @@ Alternatively, use Docker:
 
 ```bash
 # Build the Docker image
-docker build -t InstaEdit .
+docker build -t copyviral .
 
 # Run the container
-docker run -p 3000:3000 InstaEdit
+docker run -p 3000:3000 copyviral
 ```
 Then navigate to [http://localhost:3000](http://localhost:3000)
 

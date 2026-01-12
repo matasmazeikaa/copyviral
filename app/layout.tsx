@@ -18,8 +18,8 @@ const geistMono = Roboto_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'InstaEdit',
-  description: 'A free online video editor that enables you to edit videos directly from your web browser.',
+  title: 'CopyViral',
+  description: 'Copy viral videos with AI. Automatically analyze and recreate trending video styles, cuts, and pacing.',
 }
 
 export default function RootLayout({
@@ -34,7 +34,7 @@ export default function RootLayout({
       >
         <Providers>
           <Header />
-          <main className="flex-grow">
+          <main className="flex-grow pt-16">
             <Toaster
               toastOptions={{
                 style: {

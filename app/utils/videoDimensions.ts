@@ -151,44 +151,43 @@ export function calculateVideoFit(
 ): VideoFitResult {
   const CANVAS_WIDTH = 1080;
   const CANVAS_HEIGHT = 1920;
-  const CANVAS_ASPECT = CANVAS_WIDTH / CANVAS_HEIGHT; // 0.5625 (9:16)
 
   let targetWidth: number;
   let targetHeight: number;
 
   if (aspectRatioFit === 'cover') {
-    // Cover: scale to fill entire canvas (1080x1920), may crop
-    const scaleX = CANVAS_WIDTH / originalWidth;
-    const scaleY = CANVAS_HEIGHT / originalHeight;
-    const scale = Math.max(scaleX, scaleY) * zoom;
-    targetWidth = originalWidth * scale;
-    targetHeight = originalHeight * scale;
+    // Cover/Fill: container is full canvas, video fills with objectFit:cover
+    // The CSS objectFit:cover handles the actual scaling, so we just need canvas dimensions
+    // Apply zoom by scaling the container (which will scale the video proportionally)
+    targetWidth = CANVAS_WIDTH * zoom;
+    targetHeight = CANVAS_HEIGHT * zoom;
   } else if (aspectRatioFit === '1:1') {
     // 1:1 square: fit square within canvas, centered
     const maxSize = Math.min(CANVAS_WIDTH, CANVAS_HEIGHT) * zoom;
     targetWidth = maxSize;
     targetHeight = maxSize;
   } else if (aspectRatioFit === '16:9') {
-    // 16:9: fit 16:9 rectangle within canvas, centered
+    // 16:9 Fit: create a 16:9 letterbox viewport with black bars
+    // This fits a 16:9 rectangle within the 9:16 canvas
     const targetAspect = 16 / 9;
-    // Try fitting by height first
-    targetHeight = CANVAS_HEIGHT * zoom;
-    targetWidth = targetHeight * targetAspect;
-    // If too wide, fit by width
-    if (targetWidth > CANVAS_WIDTH * zoom) {
-      targetWidth = CANVAS_WIDTH * zoom;
-      targetHeight = targetWidth / targetAspect;
+    // Fit by width (since 16:9 is wider than 9:16)
+    targetWidth = CANVAS_WIDTH * zoom;
+    targetHeight = targetWidth / targetAspect;
+    // If somehow taller than canvas, constrain by height
+    if (targetHeight > CANVAS_HEIGHT * zoom) {
+      targetHeight = CANVAS_HEIGHT * zoom;
+      targetWidth = targetHeight * targetAspect;
     }
   } else {
     // Original: maintain original aspect ratio, fit within canvas
     const originalAspect = originalWidth / originalHeight;
-    // Try fitting by height first
-    targetHeight = CANVAS_HEIGHT * zoom;
-    targetWidth = targetHeight * originalAspect;
-    // If too wide, fit by width
-    if (targetWidth > CANVAS_WIDTH * zoom) {
-      targetWidth = CANVAS_WIDTH * zoom;
-      targetHeight = targetWidth / originalAspect;
+    // Try fitting by width first for landscape videos
+    targetWidth = CANVAS_WIDTH * zoom;
+    targetHeight = targetWidth / originalAspect;
+    // If too tall, fit by height
+    if (targetHeight > CANVAS_HEIGHT * zoom) {
+      targetHeight = CANVAS_HEIGHT * zoom;
+      targetWidth = targetHeight * originalAspect;
     }
   }
 

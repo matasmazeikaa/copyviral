@@ -5,8 +5,8 @@ import { useAppSelector, useAppDispatch } from "@/app/store";
 import { setMediaFiles, setFilesID, setTextElements, setActiveElement, setActiveElementIndex } from "@/app/store/slices/projectSlice";
 import { storeFile, getFile } from "@/app/store";
 import { addMediaLoading, updateMediaProgress, completeMediaLoading, errorMediaLoading } from "@/app/store/slices/loadingSlice";
-import { MediaFile, LibraryItem, TextElement } from "@/app/types";
-import { FileVideo, Crown, Zap, LayoutGrid, Upload, Library, Sparkles, Music, LogOut, Link as LinkIcon, Loader2, Trash2, Type } from "lucide-react";
+import { MediaFile, LibraryItem, TextElement, MediaType } from "@/app/types";
+import { FileVideo, Crown, Zap, LayoutGrid, Upload, Library, Sparkles, Music, LogOut, Link as LinkIcon, Loader2, Trash2, Type, ArrowLeft } from "lucide-react";
 import AITools from "./AssetsPanel/tools-section/AITools";
 import MediaList from "./AssetsPanel/tools-section/MediaList";
 import { MediaLibraryModal } from "./AssetsPanel/MediaLibraryModal";
@@ -18,6 +18,7 @@ import { getVideoDimensions, calculateVideoFit, getAudioDuration } from "@/app/u
 import { downloadMediaFile, uploadMediaFile } from "@/app/services/mediaLibraryService";
 import { useAuth } from "@/app/contexts/AuthContext";
 import { DEFAULT_TEXT_STYLE } from "@/app/constants";
+import UpgradeModal from "@/app/components/UpgradeModal";
 
 const DEFAULT_MEDIA_TIME = 2;
 const CANVAS_WIDTH = 1080;
@@ -27,17 +28,15 @@ export default function LeftSidebar() {
     const { mediaFiles, filesID, id: projectId, textElements } = useAppSelector((state) => state.projectState);
     const dispatch = useAppDispatch();
     const router = useRouter();
-    const { user } = useAuth();
+    const { user, usageInfo, isPremium, canUseAI } = useAuth();
     const [isImporting, setIsImporting] = useState(false);
     const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
     const [isAudioLibraryModalOpen, setIsAudioLibraryModalOpen] = useState(false);
+    const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
-    // Mock user stats - in real app, this would come from auth/API
-    const userStats = {
-        isPremium: false,
-        creditsUsed: 3,
-        creditsLimit: 5,
-    };
+    // Real user stats from AuthContext
+    const creditsUsed = usageInfo?.used || 0;
+    const creditsLimit = typeof usageInfo?.limit === 'number' ? usageInfo.limit : 3;
 
     // Get audio track from mediaFiles
     const audioTrack = mediaFiles.find(m => m.type === 'audio');
@@ -46,9 +45,6 @@ export default function LeftSidebar() {
         const newFiles = Array.from(e.target.files || []);
         if (newFiles.length === 0) return;
 
-        const updatedFiles = [...(filesID || [])];
-        const updatedMedia = [...mediaFiles];
-        
         // Filter out audio files (they're handled separately)
         const mediaFilesToAdd = newFiles.filter(file => {
             const fileType = categorizeFile(file.type);
@@ -61,39 +57,56 @@ export default function LeftSidebar() {
             return;
         }
 
+        // IMMEDIATELY add all files to the loading tracker before any processing
+        const filesWithIds = mediaFilesToAdd.map(file => {
+            const fileType = categorizeFile(file.type);
+            const shouldTrackProgress = fileType === 'video' || fileType === 'audio' || (fileType === 'image' && file.size > 1024 * 1024);
+            return {
+                file,
+                fileId: crypto.randomUUID(),
+                fileType,
+                shouldTrackProgress,
+            };
+        });
+
+        // Add all trackable files to loader immediately
+        for (const { fileId, file, fileType, shouldTrackProgress } of filesWithIds) {
+            if (shouldTrackProgress) {
+                dispatch(addMediaLoading({ fileId, fileName: file.name, type: fileType }));
+            }
+        }
+
+        const updatedFiles = [...(filesID || [])];
+        const updatedMedia = [...mediaFiles];
+        
         let replacedCount = 0;
         let addedCount = 0;
 
-        // Process each media file
-        for (const file of mediaFilesToAdd) {
-            const fileId = crypto.randomUUID();
-            const fileType = categorizeFile(file.type);
-            
-            // Track loading for videos, audio, and large images
+        // Process each file
+        const processFile = async ({ file, fileId, fileType, shouldTrackProgress }: typeof filesWithIds[0]) => {
             let supabaseFileId: string | undefined;
-            const shouldTrackProgress = fileType === 'video' || fileType === 'audio' || (fileType === 'image' && file.size > 1024 * 1024);
             
-            if (shouldTrackProgress) {
-                dispatch(addMediaLoading({ fileId, fileName: file.name, type: fileType }));
-                
-                // Upload to Supabase first (for fallback when IndexedDB is cleared)
-                if (user) {
-                    try {
-                        const libraryItem = await uploadMediaFile(file, user.id);
-                        const fileExt = file.name.split('.').pop() || (fileType === 'video' ? 'mp4' : fileType === 'audio' ? 'mp3' : 'jpg');
-                        supabaseFileId = `${libraryItem.id}.${fileExt}`;
-                    } catch (uploadError: any) {
-                        console.warn(`Failed to upload ${fileType} to Supabase (will continue with local storage only):`, uploadError);
-                        // Continue without Supabase ID - media will work locally but won't have fallback
-                    }
-                }
-            }
-            
-            // Store file with progress tracking for videos, audio, and large images
             try {
                 if (shouldTrackProgress) {
+                    // Upload to Supabase first (for fallback when IndexedDB is cleared)
+                    // Progress 0-50% for upload
+                    dispatch(updateMediaProgress({ fileId, progress: 5 }));
+                    if (user) {
+                        try {
+                            const libraryItem = await uploadMediaFile(file, user.id);
+                            const fileExt = file.name.split('.').pop() || (fileType === 'video' ? 'mp4' : fileType === 'audio' ? 'mp3' : 'jpg');
+                            supabaseFileId = `${libraryItem.id}.${fileExt}`;
+                        } catch (uploadError: any) {
+                            console.warn(`Failed to upload ${fileType} to Supabase (will continue with local storage only):`, uploadError);
+                        }
+                    }
+                    dispatch(updateMediaProgress({ fileId, progress: 50 }));
+                }
+                
+                // Store file with progress tracking (50-100%)
+                if (shouldTrackProgress) {
                     await storeFile(file, fileId, (progress) => {
-                        dispatch(updateMediaProgress({ fileId, progress }));
+                        dispatch(updateMediaProgress({ fileId, progress: 50 + (progress * 0.5) }));
                     });
                     dispatch(completeMediaLoading({ fileId }));
                 } else {
@@ -106,7 +119,7 @@ export default function LeftSidebar() {
                 }
                 console.error('Error storing file:', error);
                 toast.error(`Failed to load ${file.name}`);
-                continue;
+                return null;
             }
             
             // Get video dimensions if it's a video
@@ -128,7 +141,6 @@ export default function LeftSidebar() {
                     };
                 } catch (error) {
                     console.error('Failed to get video dimensions:', error);
-                    // Fallback to default dimensions
                     originalWidth = CANVAS_WIDTH;
                     originalHeight = CANVAS_HEIGHT;
                     initialFit = {
@@ -139,6 +151,26 @@ export default function LeftSidebar() {
                     };
                 }
             }
+
+            return {
+                file,
+                fileId,
+                fileType,
+                supabaseFileId,
+                originalWidth,
+                originalHeight,
+                initialFit,
+            };
+        };
+
+        // Process all files in parallel
+        const results = await Promise.all(filesWithIds.map(processFile));
+
+        // Add successful results to media array
+        for (const result of results) {
+            if (!result) continue;
+
+            const { file, fileId, fileType, supabaseFileId, originalWidth, originalHeight, initialFit } = result;
 
             // Check if there are placeholders of the matching type that can be replaced
             const matchingPlaceholders = updatedMedia.filter(
@@ -152,10 +184,8 @@ export default function LeftSidebar() {
                 const placeholderToReplace = matchingPlaceholders[0];
                 const placeholderIndex = updatedMedia.findIndex(m => m.id === placeholderToReplace.id);
 
-                // Calculate actual duration from the file or use placeholder duration
                 const duration = placeholderToReplace.positionEnd - placeholderToReplace.positionStart;
 
-                // Use calculated fit for videos, or placeholder values for other types
                 const finalFit = fileType === 'video' && initialFit 
                     ? initialFit 
                     : {
@@ -194,14 +224,12 @@ export default function LeftSidebar() {
                 };
                 replacedCount++;
             } else {
-                // No placeholder to replace, add new media as before
-                // Calculate timeline position (add after the last media of the same type)
+                // No placeholder to replace, add new media
                 const relevantClips = updatedMedia.filter(clip => clip.type === fileType);
                 const lastEnd = relevantClips.length > 0
                     ? Math.max(...relevantClips.map(f => f.positionEnd))
                     : 0;
 
-                // Use calculated fit for videos, or default values for other types
                 const finalFit = fileType === 'video' && initialFit 
                     ? initialFit 
                     : {
@@ -211,7 +239,6 @@ export default function LeftSidebar() {
                         height: CANVAS_HEIGHT,
                     };
 
-                // Create MediaFile and add to timeline
                 const mediaId = crypto.randomUUID();
                 updatedMedia.push({
                     id: mediaId,
@@ -231,7 +258,7 @@ export default function LeftSidebar() {
                     opacity: 100,
                     crop: { x: 0, y: 0, width: finalFit.width, height: finalFit.height },
                     playbackSpeed: 1,
-                    volume: 50, // 0 dB default (50 = 0 dB, 0-50 maps to -60 to 0 dB, 50-100 maps to 0 to +12 dB)
+                    volume: 50,
                     type: fileType,
                     zIndex: 0,
                     aspectRatioFit: fileType === 'video' ? 'original' : undefined,
@@ -430,10 +457,6 @@ export default function LeftSidebar() {
         }
     };
 
-    const handleUpgrade = () => {
-        toast.success("Upgrade to PRO feature coming soon!");
-    };
-
     const handleLogout = () => {
         router.push('/');
     };
@@ -445,32 +468,49 @@ export default function LeftSidebar() {
     const handleAddLibraryItemsToTimeline = async (items: LibraryItem[]) => {
         if (items.length === 0) return;
 
+        if (!user) {
+            toast.error('You must be logged in to add files from library');
+            return;
+        }
+
+        // Filter valid items first
+        const validItems = items.filter(item => 
+            item.url && (!item.status || item.status === 'completed')
+        );
+
+        if (validItems.length === 0) {
+            toast.error('No valid items to add');
+            return;
+        }
+
+        // IMMEDIATELY add all items to the loading tracker before any downloads begin
+        // This ensures the loader appears right away and shows all items at once
+        const itemsWithFileIds = validItems.map(item => ({
+            libraryItem: item,
+            fileId: crypto.randomUUID(),
+            fileType: item.type || 'video' as MediaType, // Will be updated after download
+        }));
+
+        // Add all items to loading tracker immediately
+        for (const { fileId, libraryItem, fileType } of itemsWithFileIds) {
+            dispatch(addMediaLoading({ fileId, fileName: libraryItem.name, type: fileType }));
+        }
+
         const updatedFiles = [...(filesID || [])];
         const updatedMedia = [...mediaFiles];
         
         let replacedCount = 0;
         let addedCount = 0;
 
-        // Process each library item
-        for (const libraryItem of items) {
-            // Skip items without URL or not completed
-            if (!libraryItem.url || (libraryItem.status && libraryItem.status !== 'completed')) {
-                continue;
-            }
-
+        // Process all items in parallel
+        const processItem = async ({ libraryItem, fileId, fileType: initialFileType }: typeof itemsWithFileIds[0]) => {
             try {
-                // Download file from Supabase
-                if (!user) {
-                    toast.error('You must be logged in to add files from library');
-                    continue;
-                }
-
+                // Download file from Supabase (with progress at 0-50%)
+                dispatch(updateMediaProgress({ fileId, progress: 5 }));
                 const file = await downloadMediaFile(libraryItem, user.id);
+                dispatch(updateMediaProgress({ fileId, progress: 50 }));
                 
                 const fileType = libraryItem.type || categorizeFile(file.type);
-                
-                // Store in IndexedDB with progress tracking for videos
-                const fileId = crypto.randomUUID();
                 
                 // Construct Supabase file ID (format: {fileId}.{ext})
                 const supabaseFileId = libraryItem.id
@@ -481,35 +521,24 @@ export default function LeftSidebar() {
                       })()
                     : undefined;
                 
-                // Track loading for videos, audio, and large images
-                const shouldTrackProgress = fileType === 'video' || fileType === 'audio' || (fileType === 'image' && file.size > 1024 * 1024);
-                
-                if (shouldTrackProgress) {
-                    dispatch(addMediaLoading({ fileId, fileName: libraryItem.name, type: fileType }));
-                }
-                
+                // Store in IndexedDB with progress tracking (50-100%)
                 try {
-                    if (shouldTrackProgress) {
-                        await storeFile(file, fileId, (progress) => {
-                            dispatch(updateMediaProgress({ fileId, progress }));
-                        });
-                        dispatch(completeMediaLoading({ fileId }));
-                    } else {
-                        await storeFile(file, fileId);
-                    }
+                    await storeFile(file, fileId, (progress) => {
+                        // Map 0-100 to 50-100 for the caching phase
+                        dispatch(updateMediaProgress({ fileId, progress: 50 + (progress * 0.5) }));
+                    });
+                    dispatch(completeMediaLoading({ fileId }));
                     updatedFiles.push(fileId);
                 } catch (error: any) {
-                    if (shouldTrackProgress) {
-                        dispatch(errorMediaLoading({ fileId, error: error.message || `Failed to load ${fileType}` }));
-                    }
+                    dispatch(errorMediaLoading({ fileId, error: error.message || `Failed to cache ${fileType}` }));
                     console.error('Error storing file:', error);
                     toast.error(`Failed to load ${libraryItem.name}`);
-                    continue;
+                    return null;
                 }
                 
                 // Skip audio files (handled separately)
                 if (fileType === 'audio') {
-                    continue;
+                    return null;
                 }
                 
                 // Get video dimensions if it's a video
@@ -543,106 +572,129 @@ export default function LeftSidebar() {
                     }
                 }
 
-                // Check if there are placeholders of the matching type that can be replaced
-                const matchingPlaceholders = updatedMedia.filter(
-                    clip => clip.isPlaceholder && 
-                    (clip.placeholderType === fileType || clip.placeholderType === undefined) &&
-                    clip.type === fileType
-                );
-
-                if (matchingPlaceholders.length > 0) {
-                    // Replace the first matching placeholder
-                    const placeholderToReplace = matchingPlaceholders[0];
-                    const placeholderIndex = updatedMedia.findIndex(m => m.id === placeholderToReplace.id);
-
-                    const duration = placeholderToReplace.positionEnd - placeholderToReplace.positionStart;
-
-                    const finalFit = fileType === 'video' && initialFit 
-                        ? initialFit 
-                        : {
-                            x: placeholderToReplace.x || 0,
-                            y: placeholderToReplace.y || 0,
-                            width: placeholderToReplace.width || CANVAS_WIDTH,
-                            height: placeholderToReplace.height || CANVAS_HEIGHT,
-                        };
-
-                    updatedMedia[placeholderIndex] = {
-                        ...placeholderToReplace,
-                        fileName: libraryItem.name,
-                        fileId: fileId,
-                        startTime: 0,
-                        endTime: duration,
-                        src: URL.createObjectURL(file),
-                        includeInMerge: true,
-                        x: finalFit.x,
-                        y: finalFit.y,
-                        width: finalFit.width,
-                        height: finalFit.height,
-                        rotation: placeholderToReplace.rotation || 0,
-                        opacity: placeholderToReplace.opacity || 100,
-                        crop: placeholderToReplace.crop || { x: 0, y: 0, width: finalFit.width, height: finalFit.height },
-                        playbackSpeed: placeholderToReplace.playbackSpeed || 1,
-                        volume: placeholderToReplace.volume || 100,
-                        type: fileType,
-                        zIndex: placeholderToReplace.zIndex || 0,
-                        aspectRatioFit: fileType === 'video' ? 'original' : undefined,
-                        zoom: fileType === 'video' ? 1.0 : undefined,
-                        originalWidth: fileType === 'video' ? originalWidth : undefined,
-                        originalHeight: fileType === 'video' ? originalHeight : undefined,
-                        isPlaceholder: false,
-                        placeholderType: undefined,
-                        supabaseFileId: supabaseFileId,
-                    };
-                    replacedCount++;
-                } else {
-                    // No placeholder to replace, add new media
-                    const relevantClips = updatedMedia.filter(clip => clip.type === fileType);
-                    const lastEnd = relevantClips.length > 0
-                        ? Math.max(...relevantClips.map(f => f.positionEnd))
-                        : 0;
-
-                    const finalFit = fileType === 'video' && initialFit 
-                        ? initialFit 
-                        : {
-                            x: 0,
-                            y: 0,
-                            width: CANVAS_WIDTH,
-                            height: CANVAS_HEIGHT,
-                        };
-
-                    const mediaId = crypto.randomUUID();
-                    updatedMedia.push({
-                        id: mediaId,
-                        fileName: libraryItem.name,
-                        fileId: fileId,
-                        startTime: 0,
-                        endTime: DEFAULT_MEDIA_TIME,
-                        src: URL.createObjectURL(file),
-                        positionStart: lastEnd,
-                        positionEnd: lastEnd + DEFAULT_MEDIA_TIME,
-                        includeInMerge: true,
-                        x: finalFit.x,
-                        y: finalFit.y,
-                        width: finalFit.width,
-                        height: finalFit.height,
-                        rotation: 0,
-                        opacity: 100,
-                        crop: { x: 0, y: 0, width: finalFit.width, height: finalFit.height },
-                        playbackSpeed: 1,
-                        volume: 50, // 0 dB default (50 = 0 dB, 0-50 maps to -60 to 0 dB, 50-100 maps to 0 to +12 dB)
-                        type: fileType,
-                        zIndex: 0,
-                        aspectRatioFit: fileType === 'video' ? 'original' : undefined,
-                        zoom: fileType === 'video' ? 1.0 : undefined,
-                        originalWidth: fileType === 'video' ? originalWidth : undefined,
-                        originalHeight: fileType === 'video' ? originalHeight : undefined,
-                        supabaseFileId: supabaseFileId,
-                    });
-                    addedCount++;
-                }
+                return {
+                    libraryItem,
+                    fileId,
+                    fileType,
+                    file,
+                    supabaseFileId,
+                    originalWidth,
+                    originalHeight,
+                    initialFit,
+                };
             } catch (error: any) {
+                dispatch(errorMediaLoading({ fileId, error: error.message || 'Failed to download' }));
                 console.error('Error adding library item to timeline:', error);
                 toast.error(`Failed to add ${libraryItem.name}: ${error.message}`);
+                return null;
+            }
+        };
+
+        // Process all items in parallel
+        const results = await Promise.all(itemsWithFileIds.map(processItem));
+
+        // Add successful results to media array
+        for (const result of results) {
+            if (!result) continue;
+
+            const { libraryItem, fileId, fileType, file, supabaseFileId, originalWidth, originalHeight, initialFit } = result;
+
+            // Check if there are placeholders of the matching type that can be replaced
+            const matchingPlaceholders = updatedMedia.filter(
+                clip => clip.isPlaceholder && 
+                (clip.placeholderType === fileType || clip.placeholderType === undefined) &&
+                clip.type === fileType
+            );
+
+            if (matchingPlaceholders.length > 0) {
+                // Replace the first matching placeholder
+                const placeholderToReplace = matchingPlaceholders[0];
+                const placeholderIndex = updatedMedia.findIndex(m => m.id === placeholderToReplace.id);
+
+                const duration = placeholderToReplace.positionEnd - placeholderToReplace.positionStart;
+
+                const finalFit = fileType === 'video' && initialFit 
+                    ? initialFit 
+                    : {
+                        x: placeholderToReplace.x || 0,
+                        y: placeholderToReplace.y || 0,
+                        width: placeholderToReplace.width || CANVAS_WIDTH,
+                        height: placeholderToReplace.height || CANVAS_HEIGHT,
+                    };
+
+                updatedMedia[placeholderIndex] = {
+                    ...placeholderToReplace,
+                    fileName: libraryItem.name,
+                    fileId: fileId,
+                    startTime: 0,
+                    endTime: duration,
+                    src: URL.createObjectURL(file),
+                    includeInMerge: true,
+                    x: finalFit.x,
+                    y: finalFit.y,
+                    width: finalFit.width,
+                    height: finalFit.height,
+                    rotation: placeholderToReplace.rotation || 0,
+                    opacity: placeholderToReplace.opacity || 100,
+                    crop: placeholderToReplace.crop || { x: 0, y: 0, width: finalFit.width, height: finalFit.height },
+                    playbackSpeed: placeholderToReplace.playbackSpeed || 1,
+                    volume: placeholderToReplace.volume || 100,
+                    type: fileType,
+                    zIndex: placeholderToReplace.zIndex || 0,
+                    aspectRatioFit: fileType === 'video' ? 'original' : undefined,
+                    zoom: fileType === 'video' ? 1.0 : undefined,
+                    originalWidth: fileType === 'video' ? originalWidth : undefined,
+                    originalHeight: fileType === 'video' ? originalHeight : undefined,
+                    isPlaceholder: false,
+                    placeholderType: undefined,
+                    supabaseFileId: supabaseFileId,
+                };
+                replacedCount++;
+            } else {
+                // No placeholder to replace, add new media
+                const relevantClips = updatedMedia.filter(clip => clip.type === fileType);
+                const lastEnd = relevantClips.length > 0
+                    ? Math.max(...relevantClips.map(f => f.positionEnd))
+                    : 0;
+
+                const finalFit = fileType === 'video' && initialFit 
+                    ? initialFit 
+                    : {
+                        x: 0,
+                        y: 0,
+                        width: CANVAS_WIDTH,
+                        height: CANVAS_HEIGHT,
+                    };
+
+                const mediaId = crypto.randomUUID();
+                updatedMedia.push({
+                    id: mediaId,
+                    fileName: libraryItem.name,
+                    fileId: fileId,
+                    startTime: 0,
+                    endTime: DEFAULT_MEDIA_TIME,
+                    src: URL.createObjectURL(file),
+                    positionStart: lastEnd,
+                    positionEnd: lastEnd + DEFAULT_MEDIA_TIME,
+                    includeInMerge: true,
+                    x: finalFit.x,
+                    y: finalFit.y,
+                    width: finalFit.width,
+                    height: finalFit.height,
+                    rotation: 0,
+                    opacity: 100,
+                    crop: { x: 0, y: 0, width: finalFit.width, height: finalFit.height },
+                    playbackSpeed: 1,
+                    volume: 50, // 0 dB default (50 = 0 dB, 0-50 maps to -60 to 0 dB, 50-100 maps to 0 to +12 dB)
+                    type: fileType,
+                    zIndex: 0,
+                    aspectRatioFit: fileType === 'video' ? 'original' : undefined,
+                    zoom: fileType === 'video' ? 1.0 : undefined,
+                    originalWidth: fileType === 'video' ? originalWidth : undefined,
+                    originalHeight: fileType === 'video' ? originalHeight : undefined,
+                    supabaseFileId: supabaseFileId,
+                });
+                addedCount++;
             }
         }
 
@@ -687,44 +739,71 @@ export default function LeftSidebar() {
         toast.success("Text layer added");
     };
 
+    const handleGoToProjects = () => {
+        router.push('/');
+    };
+
     return (
-        <div className="w-80 bg-[#0f172a] border-r border-slate-800 flex flex-col h-full overflow-hidden shrink-0 z-20">
+        <div className="w-72 bg-[#0f172a] border-r border-slate-800 flex flex-col h-full overflow-hidden shrink-0 z-20">
             <div className="p-6 border-b border-slate-800">
-                <div className="flex items-center gap-2 mb-1">
-                    <FileVideo className="w-6 h-6 text-blue-500" />
-                    <h1 className="text-xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                        TokCut
-                    </h1>
-                    {userStats?.isPremium && (
-                        <span className="px-1.5 py-0.5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-[10px] font-bold rounded ml-2 flex items-center gap-1">
+                <div className="flex items-center gap-3 mb-1">
+                    <button
+                        onClick={handleGoToProjects}
+                        className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors group"
+                        title="Back to Projects"
+                    >
+                        <ArrowLeft className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
+                    </button>
+                    <button
+                        onClick={handleGoToProjects}
+                        className="flex items-center gap-2 group flex-1"
+                    >
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/25 group-hover:shadow-purple-500/40 transition-shadow">
+                            <Zap className="w-5 h-5 text-white" fill="white" />
+                        </div>
+                        <span className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 group-hover:from-purple-300 group-hover:to-pink-300 transition-all">
+                            CopyViral
+                        </span>
+                    </button>
+                    {isPremium && (
+                        <span className="px-1.5 py-0.5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-[10px] font-bold rounded flex items-center gap-1">
                             <Crown className="w-3 h-3 fill-current" /> PRO
                         </span>
                     )}
                 </div>
-                <p className="text-xs text-slate-500 font-medium">CLOUD RENDER MODE</p>
                 
-                {userStats && (
+                {user && (
                     <div className="mt-4 p-3 bg-slate-800/50 rounded-xl border border-slate-700/50">
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-xs text-slate-400 font-semibold flex items-center gap-1">
-                                <Zap className="w-3 h-3 text-yellow-400" /> Cloud Credits
+                                <Zap className="w-3 h-3 text-yellow-400" /> AI Credits
                             </span>
                             <span className="text-xs text-white font-mono">
-                                {userStats.isPremium ? '∞' : `${userStats.creditsUsed}/${userStats.creditsLimit}`}
+                                {isPremium ? '∞' : `${creditsUsed}/${creditsLimit}`}
                             </span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
                             <div 
-                                className={`h-full rounded-full transition-all ${userStats.isPremium ? 'bg-gradient-to-r from-yellow-400 to-orange-500 w-full' : 'bg-blue-500'}`}
-                                style={{ width: userStats.isPremium ? '100%' : `${Math.min((userStats.creditsUsed / userStats.creditsLimit) * 100, 100)}%` }}
+                                className={`h-full rounded-full transition-all ${
+                                    isPremium 
+                                        ? 'bg-gradient-to-r from-yellow-400 to-orange-500 w-full' 
+                                        : !canUseAI 
+                                            ? 'bg-gradient-to-r from-red-500 to-orange-500' 
+                                            : 'bg-blue-500'
+                                }`}
+                                style={{ width: isPremium ? '100%' : `${Math.min((creditsUsed / creditsLimit) * 100, 100)}%` }}
                             />
                         </div>
-                        {!userStats.isPremium && (
+                        {!isPremium && (
                             <button 
-                                onClick={handleUpgrade}
-                                className="w-full mt-3 py-1.5 text-xs font-bold text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30 rounded-lg transition-colors flex items-center justify-center gap-1"
+                                onClick={() => setShowUpgradeModal(true)}
+                                className={`w-full mt-3 py-1.5 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${
+                                    !canUseAI 
+                                        ? 'text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-500/25'
+                                        : 'text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30'
+                                }`}
                             >
-                                <Crown className="w-3 h-3" /> Upgrade to PRO
+                                <Crown className="w-3 h-3" /> {!canUseAI ? 'Unlock More AI Credits' : 'Upgrade to PRO'}
                             </button>
                         )}
                     </div>
@@ -833,6 +912,14 @@ export default function LeftSidebar() {
                 isOpen={isAudioLibraryModalOpen}
                 onClose={() => setIsAudioLibraryModalOpen(false)}
                 onAddToTimeline={handleAddAudioFromLibrary}
+            />
+
+            {/* Upgrade Modal */}
+            <UpgradeModal
+                isOpen={showUpgradeModal}
+                onClose={() => setShowUpgradeModal(false)}
+                usedCount={creditsUsed}
+                limitCount={creditsLimit}
             />
         </div>
     );
