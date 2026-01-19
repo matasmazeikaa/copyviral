@@ -2,11 +2,11 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getFile, useAppSelector } from "@/app/store";
-import { Heart } from "lucide-react";
 import { extractConfigs } from "@/app/utils/extractConfigs";
 import { mimeToExt } from "@/app/types";
 import { toast } from "react-hot-toast";
 import FfmpegProgressBar from "./ProgressBar";
+import { volumeToLinear } from "@/app/utils/utils";
 
 const RENDER_MESSAGES = [
     { text: "Making it viral...", icon: "rocket" },
@@ -36,6 +36,7 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [isRendering, setIsRendering] = useState(false);
     const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
+    const [renderError, setRenderError] = useState<string | null>(null);
 
     // Cycle through render messages
     useEffect(() => {
@@ -57,6 +58,7 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
     const handleCloseModal = async () => {
         setShowModal(false);
         setIsRendering(false);
+        setRenderError(null);
         try {
             ffmpeg.terminate();
             await loadFunction();
@@ -72,6 +74,7 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
         }
         setShowModal(true);
         setIsRendering(true);
+        setRenderError(null);
 
         const renderFunction = async () => {
             const params = extractConfigs(exportSettings);
@@ -125,43 +128,43 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                     const visualLabel = `visual${i}`;
                     const audioLabel = `audio${i}`;
                     
-                    const mediaWidth = Math.round(sortedMediaFiles[i].width || 1080);
-                    const mediaHeight = Math.round(sortedMediaFiles[i].height || 1920);
+                    // Ensure dimensions are even (required by libx264 encoder)
+                    const makeEven = (n: number) => Math.round(n / 2) * 2;
+                    const mediaWidth = makeEven(sortedMediaFiles[i].width || 1080);
+                    const mediaHeight = makeEven(sortedMediaFiles[i].height || 1920);
                     const aspectRatioFit = sortedMediaFiles[i].aspectRatioFit || 'original';
+
+                    // Calculate opacity filter suffix
+                    const alpha = Math.min(Math.max((sortedMediaFiles[i].opacity || 100) / 100, 0), 1);
+                    const opacityFilter = `,format=yuva420p,colorchannelmixer=aa=${alpha}`;
 
                     // Shift clip to correct place on timeline (video)
                     if (sortedMediaFiles[i].type === 'video') {
                         // For "cover" mode: scale to fill container (may crop), then crop to exact size
                         // For other modes: scale to fit within container (maintain aspect ratio), then pad with black
+                        // force_divisible_by=2 ensures FFmpeg outputs even dimensions (required by libx264 and yuva420p)
                         let scaleFilter: string;
                         if (aspectRatioFit === 'cover') {
-                            // Cover: scale up to fill, then crop to exact container size
-                            scaleFilter = `scale=${mediaWidth}:${mediaHeight}:force_original_aspect_ratio=increase,crop=${mediaWidth}:${mediaHeight}`;
+                            // Cover: scale up to fill, then crop to exact container size (centered)
+                            scaleFilter = `scale=${mediaWidth}:${mediaHeight}:force_original_aspect_ratio=increase:force_divisible_by=2,crop=${mediaWidth}:${mediaHeight}:(iw-${mediaWidth})/2:(ih-${mediaHeight})/2`;
                         } else {
                             // Contain: scale to fit within container, pad with black to fill remaining space
-                            scaleFilter = `scale=${mediaWidth}:${mediaHeight}:force_original_aspect_ratio=decrease,pad=${mediaWidth}:${mediaHeight}:(ow-iw)/2:(oh-ih)/2:black`;
+                            scaleFilter = `scale=${mediaWidth}:${mediaHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=${mediaWidth}:${mediaHeight}:(ow-iw)/2:(oh-ih)/2:black`;
                         }
                         filters.push(
-                            `[${i}:v]trim=start=${startTime.toFixed(3)}:duration=${duration.toFixed(3)},${scaleFilter},setpts=PTS-STARTPTS+${positionStart.toFixed(3)}/TB[${visualLabel}]`
+                            `[${i}:v]trim=start=${startTime.toFixed(3)}:duration=${duration.toFixed(3)},${scaleFilter},setpts=PTS-STARTPTS+${positionStart.toFixed(3)}/TB${opacityFilter}[${visualLabel}]`
                         );
                     }
                     if (sortedMediaFiles[i].type === 'image') {
+                        // force_divisible_by=2 ensures FFmpeg outputs even dimensions (required by libx264 and yuva420p)
                         let scaleFilter: string;
                         if (aspectRatioFit === 'cover') {
-                            scaleFilter = `scale=${mediaWidth}:${mediaHeight}:force_original_aspect_ratio=increase,crop=${mediaWidth}:${mediaHeight}`;
+                            scaleFilter = `scale=${mediaWidth}:${mediaHeight}:force_original_aspect_ratio=increase:force_divisible_by=2,crop=${mediaWidth}:${mediaHeight}:(iw-${mediaWidth})/2:(ih-${mediaHeight})/2`;
                         } else {
-                            scaleFilter = `scale=${mediaWidth}:${mediaHeight}:force_original_aspect_ratio=decrease,pad=${mediaWidth}:${mediaHeight}:(ow-iw)/2:(oh-ih)/2:black`;
+                            scaleFilter = `scale=${mediaWidth}:${mediaHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=${mediaWidth}:${mediaHeight}:(ow-iw)/2:(oh-ih)/2:black`;
                         }
                         filters.push(
-                            `[${i}:v]${scaleFilter},setpts=PTS+${positionStart.toFixed(3)}/TB[${visualLabel}]`
-                        );
-                    }
-
-                    // Apply opacity
-                    if (sortedMediaFiles[i].type === 'video' || sortedMediaFiles[i].type === 'image') {
-                        const alpha = Math.min(Math.max((sortedMediaFiles[i].opacity || 100) / 100, 0), 1);
-                        filters.push(
-                            `[${visualLabel}]format=yuva420p,colorchannelmixer=aa=${alpha}[${visualLabel}]`
+                            `[${i}:v]${scaleFilter},setpts=PTS+${positionStart.toFixed(3)}/TB${opacityFilter}[${visualLabel}]`
                         );
                     }
 
@@ -179,9 +182,9 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                     // Audio: trim, then delay (in ms)
                     if (sortedMediaFiles[i].type === 'audio' || sortedMediaFiles[i].type === 'video') {
                         const delayMs = Math.round(positionStart * 1000);
-                        const volume = sortedMediaFiles[i].volume !== undefined ? sortedMediaFiles[i].volume / 100 : 1;
+                        const volume = volumeToLinear(sortedMediaFiles[i].volume ?? 50);
                         filters.push(
-                            `[${i}:a]atrim=start=${startTime.toFixed(3)}:duration=${duration.toFixed(3)},asetpts=PTS-STARTPTS,adelay=${delayMs}|${delayMs},volume=${volume}[${audioLabel}]`
+                            `[${i}:a]atrim=start=${startTime.toFixed(3)}:duration=${duration.toFixed(3)},asetpts=PTS-STARTPTS,adelay=${delayMs}|${delayMs},volume=${volume.toFixed(4)}[${audioLabel}]`
                         );
                         audioDelays.push(`[${audioLabel}]`);
                     }
@@ -192,11 +195,23 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                 if (overlays.length > 0) {
                     for (let i = 0; i < overlays.length; i++) {
                         const { label, start, end, x, y } = overlays[i];
-                        const nextLabel = i === overlays.length - 1 ? 'outv' : `tmp${i}`;
+                        // Only use 'outv' for final overlay if there are no text elements after
+                        const isLastOverlay = i === overlays.length - 1;
+                        const nextLabel = (isLastOverlay && textElements.length === 0) ? 'outv' : `tmp${i}`;
                         filters.push(
                             `[${lastLabel}][${label}]overlay=${x}:${y}:enable='between(t\\,${start}\\,${end})'[${nextLabel}]`
                         );
                         lastLabel = nextLabel;
+                    }
+                }
+
+                // If no visual overlays were added, prepare for text or create final output
+                if (overlays.length === 0) {
+                    if (textElements.length === 0) {
+                        filters.push(`[base]copy[outv]`);
+                    } else {
+                        // Text will be applied, use base as starting point
+                        lastLabel = 'base';
                     }
                 }
 
@@ -215,31 +230,50 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                         usedFonts.add(fontToUse);
                     });
                     
+                    // Always ensure fallback font is in the list
+                    usedFonts.add(fallbackFont);
+                    
                     // Load only fonts that are actually used
+                    const loadedFonts = new Set<string>();
                     for (const font of Array.from(usedFonts)) {
                         try {
                             const res = await fetch(`/fonts/${font}.ttf`);
                             if (!res.ok) {
-                                console.warn(`Font ${font} not found, using fallback ${fallbackFont}`);
+                                console.warn(`Font ${font} not found (${res.status}), will try fallback`);
                                 continue;
                             }
                             const fontBuf = await res.arrayBuffer();
+                            console.log(`Loading font ${font}, size: ${fontBuf.byteLength} bytes`);
                             await ffmpeg.writeFile(`font${font}.ttf`, new Uint8Array(fontBuf));
+                            loadedFonts.add(font);
                         } catch (err) {
                             console.warn(`Failed to load font ${font}:`, err);
                         }
                     }
+                    console.log('Loaded fonts:', Array.from(loadedFonts));
                     
-                    // Apply text
+                    // Ensure at least one font is loaded
+                    if (loadedFonts.size === 0) {
+                        throw new Error('Failed to load any fonts for text rendering. Please check that font files exist in /public/fonts/');
+                    }
+                    
+                    // Apply text - write each text to a file to avoid escaping issues
                     for (let i = 0; i < textElements.length; i++) {
                         const text = textElements[i];
                         
-                        // Use fallback font if the requested font doesn't exist
+                        // Use fallback font if the requested font wasn't successfully loaded
                         const requestedFont = text.font || fallbackFont;
-                        const fontToUse = availableFonts.includes(requestedFont) ? requestedFont : fallbackFont;
+                        // Check against loadedFonts (actually loaded) not availableFonts (potentially available)
+                        const fontToUse = loadedFonts.has(requestedFont) ? requestedFont : 
+                                          (loadedFonts.has(fallbackFont) ? fallbackFont : Array.from(loadedFonts)[0]);
                         
                         const alpha = Math.min(Math.max((text.opacity ?? 100) / 100, 0), 1);
-                        const color = text.color?.includes('@') ? text.color : `${text.color || 'white'}@${alpha}`;
+                        // Escape # in color for FFmpeg filter (use 0x prefix instead)
+                        let colorValue = text.color || 'white';
+                        if (colorValue.startsWith('#')) {
+                            colorValue = '0x' + colorValue.slice(1);
+                        }
+                        const color = colorValue.includes('@') ? colorValue : `${colorValue}@${alpha}`;
                         const fontSize = text.fontSize || 24;
                         const align = text.align || 'center';
                         
@@ -252,21 +286,27 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                             const line = textLines[lineIndex];
                             if (!line.trim() && lineIndex > 0) continue; // Skip empty lines except first
                             
-                            // Escape text for FFmpeg drawtext (single quotes, escape single quotes and backslashes)
-                            let escapedLine = line
-                                .replace(/\\/g, '\\\\')     // Escape backslashes first
-                                .replace(/'/g, "\\'")       // Escape single quotes
-                                .replace(/:/g, '\\:');      // Escape colons
+                            // Normalize text - strip emojis and special characters that fonts can't render
+                            const normalizedLine = line
+                                // Normalize smart quotes
+                                .replace(/[\u2018\u2019\u201A\u201B\u0060\u00B4]/g, "'")
+                                .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+                                // Normalize dashes
+                                .replace(/[\u2013\u2014\u2212]/g, '-')
+                                // Normalize ellipsis
+                                .replace(/\u2026/g, '...')
+                                // Remove emojis and other non-renderable characters
+                                // Keep only basic Latin, Latin-1 Supplement, and common punctuation
+                                .replace(/[^\u0020-\u007E\u00A0-\u00FF]/g, '');
                             
-                            escapedLine = `'${escapedLine}'`;
+                            // Write text to a file to avoid complex escaping
+                            const textFileName = `text_${i}_${lineIndex}.txt`;
+                            await ffmpeg.writeFile(textFileName, normalizedLine);
                             
                             // Calculate y position for this line
                             const lineY = text.y + (lineIndex * lineSpacing);
                             
                             // Calculate x position based on alignment
-                            // For center: x position minus half the text width
-                            // For right: x position minus full text width  
-                            // For left: x position as-is
                             let xExpression: string;
                             if (align === 'center') {
                                 xExpression = `${text.x}-text_w/2`;
@@ -281,8 +321,8 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                             const isLastLine = lineIndex === textLines.length - 1;
                             const label = (isLastTextElement && isLastLine) ? 'outv' : `text${i}_line${lineIndex}`;
                             
-                            // Build drawtext filter for this line
-                            const drawtextFilter = `[${lastLabel}]drawtext=fontfile=font${fontToUse}.ttf:text=${escapedLine}:x=${xExpression}:y=${lineY}:fontsize=${fontSize}:fontcolor=${color}:enable='between(t\\,${text.positionStart}\\,${text.positionEnd})'[${label}]`;
+                            // Build drawtext filter using textfile instead of text
+                            const drawtextFilter = `[${lastLabel}]drawtext=fontfile=font${fontToUse}.ttf:textfile=${textFileName}:x=${xExpression}:y=${lineY}:fontsize=${fontSize}:fontcolor=${color}:enable='between(t\\,${text.positionStart}\\,${text.positionEnd})'[${label}]`;
                             
                             filters.push(drawtextFilter);
                             lastLabel = label;
@@ -310,6 +350,7 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
 
                 ffmpegArgs.push(
                     '-c:v', 'libx264',
+                    '-pix_fmt', 'yuv420p',  // Convert from yuva420p to yuv420p for browser compatibility
                     '-c:a', 'aac',
                     '-preset', params.preset,
                     '-crf', params.crf.toString(),
@@ -317,14 +358,29 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                     'output.mp4'
                 );
 
-                await ffmpeg.exec(ffmpegArgs);
+                console.log('FFmpeg args:', ffmpegArgs);
+                console.log('Filter complex:', complexFilter);
+                
+                const exitCode = await ffmpeg.exec(ffmpegArgs);
+                
+                if (exitCode !== 0) {
+                    console.error('FFmpeg filter_complex:', complexFilter);
+                    console.error('FFmpeg logs:', logMessages);
+                    throw new Error(`FFmpeg exited with code ${exitCode}. See FFmpeg logs above.`);
+                }
 
             } catch (err) {
                 console.error('FFmpeg processing error:', err);
+                throw err;
             }
 
             // return the output url
-            const outputData = await ffmpeg.readFile('output.mp4');
+            let outputData;
+            try {
+                outputData = await ffmpeg.readFile('output.mp4');
+            } catch (readErr) {
+                throw new Error('Output file not created. FFmpeg may have failed - check console for details.');
+            }
             const outputBlob = new Blob([outputData as Uint8Array], { type: 'video/mp4' });
             const outputUrl = URL.createObjectURL(outputBlob);
             return outputUrl;
@@ -338,8 +394,10 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
             setIsRendering(false);
             toast.success('Video rendered successfully');
         } catch (err) {
-            toast.error('Failed to render video');
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
             console.error("Failed to render video:", err);
+            setRenderError(errorMessage);
+            setIsRendering(false);
         }
     };
 
@@ -347,33 +405,29 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
         return !loadFfmpeg || isRendering || mediaFiles.length === 0 || hasPlaceholderMediaFiles;
     }, [loadFfmpeg, isRendering, mediaFiles, hasPlaceholderMediaFiles]);
 
-    console.log(loadFfmpeg, isRendering, mediaFiles.length, hasPlaceholderMediaFiles)
-
-    console.log(isRenderDisabled)
-
     return (
         <>
             {/* Render Button */}
             <button
                 onClick={() => render()}
-                className={`inline-flex items-center gap-2 px-5 py-3 rounded-xl font-semibold transition-all duration-200 ${
+                className={`w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl font-semibold transition-all duration-200 ${
                     isRenderDisabled 
                         ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
                         : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40'
                 }`}
                 disabled={isRenderDisabled}
             >
-                {(!loadFfmpeg || isRendering) ? (
+                {isRendering ? (
                     <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
                 ) : (
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                 )}
-                <span>{loadFfmpeg ? (isRendering ? 'Rendering...' : 'Render') : 'Loading FFmpeg...'}</span>
+                <span>{isRendering ? 'Creating...' : 'Create Viral Clip'}</span>
             </button>
 
             {/* Render Modal */}
@@ -388,10 +442,10 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                             <div className="flex justify-between items-center mb-6">
                                 <div>
                                     <h3 className="text-xl font-bold text-white">
-                                        {isRendering ? 'Rendering Video' : 'Export Complete'}
+                                        {renderError ? 'Render Failed' : isRendering ? 'Rendering Video' : 'Export Complete'}
                                     </h3>
                                     <p className="text-sm text-slate-400 mt-1">
-                                        {isRendering ? 'Please wait while your video is being processed' : 'Your video is ready to download'}
+                                        {renderError ? 'Something went wrong during rendering' : isRendering ? 'Please wait while your video is being processed' : 'Your video is ready to download'}
                                     </p>
                                 </div>
                                 <button
@@ -405,7 +459,48 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                                 </button>
                             </div>
 
-                            {isRendering ? (
+                            {renderError ? (
+                                <div className="space-y-6">
+                                    {/* Error icon */}
+                                    <div className="flex flex-col items-center justify-center py-4">
+                                        <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center mb-4">
+                                            <svg className="w-8 h-8 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                            </svg>
+                                        </div>
+                                        <p className="text-center text-slate-300">
+                                            Something went wrong while rendering your video.
+                                        </p>
+                                    </div>
+                                    
+                                    {/* FFmpeg logs */}
+                                    {logMessages && (
+                                        <div className="bg-slate-950 border border-slate-700 rounded-lg p-3 max-h-48 overflow-y-auto">
+                                            <p className="text-xs font-medium text-slate-400 mb-2">FFmpeg Log:</p>
+                                            <pre className="text-xs text-red-300 whitespace-pre-wrap font-mono">{logMessages}</pre>
+                                        </div>
+                                    )}
+                                    
+                                    {/* Action buttons */}
+                                    <div className="flex gap-3">
+                                        <button
+                                            onClick={() => window.location.reload()}
+                                            className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-400 hover:to-pink-400 text-white rounded-xl font-semibold transition-all shadow-lg shadow-purple-500/25"
+                                        >
+                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                            </svg>
+                                            Refresh Page
+                                        </button>
+                                        <button
+                                            onClick={handleCloseModal}
+                                            className="px-4 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl font-medium transition-all"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : isRendering ? (
                                 <div className="space-y-6">
                                     {/* Animated scene */}
                                     <div className="flex flex-col items-center justify-center py-6">
@@ -546,15 +641,6 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                             </svg>
                                             Download Video
-                                        </a>
-                                        <a
-                                            href="https://github.com/sponsors/mohyware"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center justify-center gap-2 px-4 py-3 bg-slate-800 hover:bg-slate-700 text-pink-400 border border-slate-700 hover:border-pink-500/30 rounded-xl font-medium transition-all"
-                                        >
-                                            <Heart size={18} className="text-pink-400" />
-                                            <span className="hidden sm:inline">Sponsor</span>
                                         </a>
                                     </div>
                                 </div>

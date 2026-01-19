@@ -6,7 +6,7 @@ import { setMediaFiles, setFilesID, setTextElements, setActiveElement, setActive
 import { storeFile, getFile } from "@/app/store";
 import { addMediaLoading, updateMediaProgress, completeMediaLoading, errorMediaLoading } from "@/app/store/slices/loadingSlice";
 import { MediaFile, LibraryItem, TextElement, MediaType } from "@/app/types";
-import { FileVideo, Crown, Zap, LayoutGrid, Upload, Library, Sparkles, Music, LogOut, Link as LinkIcon, Loader2, Trash2, Type, ArrowLeft } from "lucide-react";
+import { FileVideo, Crown, Zap, LayoutGrid, Upload, Library, Sparkles, Music, LogOut, Link as LinkIcon, Loader2, Trash2, Type, ArrowLeft, Wand2, Video, AudioWaveform, ArrowRight } from "lucide-react";
 import AITools from "./AssetsPanel/tools-section/AITools";
 import MediaList from "./AssetsPanel/tools-section/MediaList";
 import { MediaLibraryModal, AudioLibraryModal } from "./AssetsPanel/LibraryModal";
@@ -16,29 +16,58 @@ import { categorizeFile } from "@/app/utils/utils";
 import { getVideoDimensions, calculateVideoFit, getAudioDuration } from "@/app/utils/videoDimensions";
 import { downloadMediaFile, uploadMediaFile } from "@/app/services/mediaLibraryService";
 import { useAuth } from "@/app/contexts/AuthContext";
+import { useAIAnalysis } from "@/app/contexts/AIAnalysisContext";
 import { DEFAULT_TEXT_STYLE } from "@/app/constants";
 import UpgradeModal from "@/app/components/UpgradeModal";
+import { AIToolsModal, AIToolType } from "@/app/components/AIToolsModal";
 
 const DEFAULT_MEDIA_TIME = 2;
 const CANVAS_WIDTH = 1080;
 const CANVAS_HEIGHT = 1920;
 
 export default function LeftSidebar() {
-    const { mediaFiles, filesID, id: projectId, textElements } = useAppSelector((state) => state.projectState);
+    const { mediaFiles, filesID, id: projectId, textElements, projectName } = useAppSelector((state) => state.projectState);
     const dispatch = useAppDispatch();
     const router = useRouter();
     const { user, usageInfo, isPremium, canUseAI } = useAuth();
+    const { startAnalysis, isAnalyzing } = useAIAnalysis();
     const [isImporting, setIsImporting] = useState(false);
     const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
     const [isAudioLibraryModalOpen, setIsAudioLibraryModalOpen] = useState(false);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+    const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
     // Real user stats from AuthContext
-    const creditsUsed = usageInfo?.used || 0;
+    const creditsUsed = usageInfo?.used ?? null;
     const creditsLimit = typeof usageInfo?.limit === 'number' ? usageInfo.limit : 3;
+    const isUsageLoading = usageInfo === null;
 
     // Get audio track from mediaFiles
     const audioTrack = mediaFiles.find(m => m.type === 'audio');
+
+    // Handle AI tool selection from modal
+    const handleAIToolSelect = async (tool: AIToolType, url: string) => {
+        if (!user) {
+            toast.error('You must be logged in to use AI tools');
+            return;
+        }
+
+        if (!canUseAI) {
+            setShowUpgradeModal(true);
+            return;
+        }
+
+        // Audio beats is coming soon
+        if (tool === 'audio-beats') {
+            toast('Audio Beat Sync is coming soon! 🎵', { icon: '🚀' });
+            return;
+        }
+
+        setIsAIModalOpen(false);
+
+        // Use context to trigger analysis directly (no navigation delay)
+        startAnalysis(url);
+    };
 
     const handleQuickUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const newFiles = Array.from(e.target.files || []);
@@ -374,11 +403,33 @@ export default function LeftSidebar() {
             return;
         }
 
+        const fileId = crypto.randomUUID();
+        
+        // Track loading for audio IMMEDIATELY before download starts
+        dispatch(addMediaLoading({ fileId, fileName: libraryItem.name, type: 'audio' }));
+        dispatch(updateMediaProgress({ fileId, progress: 5 }));
+
         try {
-            // Download file from Supabase
-            const file = await downloadMediaFile(libraryItem, user.id);
+            // Download file from Supabase with simulated progress
+            let currentProgress = 5;
+            const maxDownloadProgress = 45;
             
-            const fileId = crypto.randomUUID();
+            const progressInterval = setInterval(() => {
+                const remaining = maxDownloadProgress - currentProgress;
+                const increment = Math.max(0.5, remaining * 0.08);
+                currentProgress = Math.min(maxDownloadProgress, currentProgress + increment);
+                dispatch(updateMediaProgress({ fileId, progress: Math.round(currentProgress) }));
+            }, 200);
+
+            let file: File;
+            try {
+                file = await downloadMediaFile(libraryItem, user.id);
+                clearInterval(progressInterval);
+                dispatch(updateMediaProgress({ fileId, progress: 50 }));
+            } catch (downloadError) {
+                clearInterval(progressInterval);
+                throw downloadError;
+            }
             
             // Construct Supabase file ID from library item (format: {fileId}.{ext})
             const supabaseFileId = libraryItem.id
@@ -388,13 +439,10 @@ export default function LeftSidebar() {
                   })()
                 : undefined;
             
-            // Track loading for audio
-            dispatch(addMediaLoading({ fileId, fileName: libraryItem.name, type: 'audio' }));
-            
             try {
-                // Store file in IndexedDB with progress tracking
+                // Store file in IndexedDB with progress tracking (50-100%)
                 await storeFile(file, fileId, (progress) => {
-                    dispatch(updateMediaProgress({ fileId, progress }));
+                    dispatch(updateMediaProgress({ fileId, progress: 50 + (progress * 0.5) }));
                 });
                 dispatch(completeMediaLoading({ fileId }));
             } catch (error: any) {
@@ -501,13 +549,41 @@ export default function LeftSidebar() {
         let replacedCount = 0;
         let addedCount = 0;
 
+        // Helper to simulate progress during download (since Supabase doesn't provide download progress)
+        const downloadWithSimulatedProgress = async (
+            libraryItem: LibraryItem, 
+            userId: string, 
+            fileId: string
+        ): Promise<File> => {
+            // Start simulated progress animation
+            let currentProgress = 5;
+            const maxDownloadProgress = 45; // Will go from 5 to 45 during download
+            
+            const progressInterval = setInterval(() => {
+                // Slowly increment progress to give feedback (ease out to slow down as it approaches max)
+                const remaining = maxDownloadProgress - currentProgress;
+                const increment = Math.max(0.5, remaining * 0.08); // Decreasing increments
+                currentProgress = Math.min(maxDownloadProgress, currentProgress + increment);
+                dispatch(updateMediaProgress({ fileId, progress: Math.round(currentProgress) }));
+            }, 200);
+
+            try {
+                const file = await downloadMediaFile(libraryItem, userId);
+                clearInterval(progressInterval);
+                dispatch(updateMediaProgress({ fileId, progress: 50 }));
+                return file;
+            } catch (error) {
+                clearInterval(progressInterval);
+                throw error;
+            }
+        };
+
         // Process all items in parallel
         const processItem = async ({ libraryItem, fileId, fileType: initialFileType }: typeof itemsWithFileIds[0]) => {
             try {
-                // Download file from Supabase (with progress at 0-50%)
+                // Download file from Supabase with simulated progress (0-50%)
                 dispatch(updateMediaProgress({ fileId, progress: 5 }));
-                const file = await downloadMediaFile(libraryItem, user.id);
-                dispatch(updateMediaProgress({ fileId, progress: 50 }));
+                const file = await downloadWithSimulatedProgress(libraryItem, user.id, fileId);
                 
                 const fileType = libraryItem.type || categorizeFile(file.type);
                 
@@ -743,9 +819,9 @@ export default function LeftSidebar() {
     };
 
     return (
-        <div className="w-72 bg-[#0f172a] border-r border-slate-800 flex flex-col h-full overflow-hidden shrink-0 z-20">
-            <div className="p-6 border-b border-slate-800">
-                <div className="flex items-center gap-3 mb-1">
+        <div className="w-full lg:w-72 bg-[#0f172a] lg:border-r border-slate-800 flex flex-col h-full overflow-hidden shrink-0 z-20">
+            <div className="p-4 lg:p-6 border-b border-slate-800">
+                <div className="flex items-center gap-2 lg:gap-3 mb-1">
                     <button
                         onClick={handleGoToProjects}
                         className="p-1.5 rounded-lg hover:bg-slate-800 transition-colors group"
@@ -755,57 +831,61 @@ export default function LeftSidebar() {
                     </button>
                     <button
                         onClick={handleGoToProjects}
-                        className="flex items-center gap-2 group flex-1"
+                        className="flex items-center gap-2 group flex-1 min-w-0"
                     >
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/25 group-hover:shadow-purple-500/40 transition-shadow">
-                            <Zap className="w-5 h-5 text-white" fill="white" />
+                        <div className="w-8 lg:w-9 h-8 lg:h-9 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/25 group-hover:shadow-purple-500/40 transition-shadow shrink-0">
+                            <Zap className="w-4 lg:w-5 h-4 lg:h-5 text-white" fill="white" />
                         </div>
-                        <span className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 group-hover:from-purple-300 group-hover:to-pink-300 transition-all">
+                        <span className="text-lg lg:text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 group-hover:from-purple-300 group-hover:to-pink-300 transition-all truncate">
                             CopyViral
                         </span>
                     </button>
                     {isPremium && (
-                        <span className="px-1.5 py-0.5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-[10px] font-bold rounded flex items-center gap-1">
+                        <span className="px-1.5 py-0.5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-[10px] font-bold rounded flex items-center gap-1 shrink-0">
                             <Crown className="w-3 h-3 fill-current" /> PRO
                         </span>
                     )}
                 </div>
                 
-                {user && !isPremium && (
+                {user && (
                     <div className="mt-4 p-3 bg-slate-800/50 rounded-xl border border-slate-700/50">
                         <div className="flex items-center justify-between mb-2">
                             <span className="text-xs text-slate-400 font-semibold flex items-center gap-1">
                                 <Zap className="w-3 h-3 text-yellow-400" /> AI Credits
                             </span>
                             <span className="text-xs text-white font-mono">
-                                {creditsUsed}/{creditsLimit}
+                                {isPremium ? '∞' : isUsageLoading ? '-/-' : `${creditsUsed}/${creditsLimit}`}
                             </span>
                         </div>
                         <div className="w-full h-1.5 bg-slate-700 rounded-full overflow-hidden">
                             <div 
                                 className={`h-full rounded-full transition-all ${
-                                    !canUseAI 
-                                        ? 'bg-gradient-to-r from-red-500 to-orange-500' 
-                                        : 'bg-blue-500'
+                                    isPremium 
+                                        ? 'bg-gradient-to-r from-yellow-400 to-orange-500 w-full' 
+                                        : !canUseAI 
+                                            ? 'bg-gradient-to-r from-red-500 to-orange-500' 
+                                            : 'bg-blue-500'
                                 }`}
-                                style={{ width: `${Math.min((creditsUsed / creditsLimit) * 100, 100)}%` }}
+                                style={{ width: isPremium ? '100%' : isUsageLoading ? '0%' : `${Math.min(((creditsUsed ?? 0) / creditsLimit) * 100, 100)}%` }}
                             />
                         </div>
-                        <button 
-                            onClick={() => setShowUpgradeModal(true)}
-                            className={`w-full mt-3 py-1.5 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${
-                                !canUseAI 
-                                    ? 'text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-500/25'
-                                    : 'text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30'
-                            }`}
-                        >
-                            <Crown className="w-3 h-3" /> {!canUseAI ? 'Unlock More AI Credits' : 'Upgrade to PRO'}
-                        </button>
+                        {!isPremium && (
+                            <button 
+                                onClick={() => setShowUpgradeModal(true)}
+                                className={`w-full mt-3 py-1.5 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${
+                                    !canUseAI 
+                                        ? 'text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-500/25'
+                                        : 'text-yellow-300 bg-yellow-500/10 hover:bg-yellow-500/20 border border-yellow-500/30'
+                                }`}
+                            >
+                                <Crown className="w-3 h-3" /> {!canUseAI ? 'Unlock More AI Credits' : 'Upgrade to PRO'}
+                            </button>
+                        )}
                     </div>
                 )}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+            <div className="flex-1 overflow-y-auto p-3 lg:p-4 space-y-4 lg:space-y-6 scrollbar-hide">
                 {/* Media Library Action */}
                 <div>
                     <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -830,8 +910,63 @@ export default function LeftSidebar() {
                     </div>
                 </div>
 
-                {/* AI Reference Copy */}
-                <AITools />
+                {/* AI Tools Button */}
+                <div>
+                    <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <Wand2 className="w-4 h-4" /> AI Tools
+                    </h2>
+                    <button 
+                        onClick={() => setIsAIModalOpen(true)}
+                        disabled={isAnalyzing}
+                        className="w-full group relative text-left"
+                    >
+                        {/* Animated gradient border */}
+                        <div className="absolute -inset-[1px] bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-500 rounded-xl opacity-60 blur-[1px] group-hover:opacity-100 transition-opacity duration-500" 
+                            style={{ 
+                                backgroundSize: '200% 200%',
+                                animation: 'gradient-x 3s ease infinite'
+                            }} 
+                        />
+                        <div className="relative bg-gradient-to-r from-slate-900 via-slate-900 to-purple-950/30 backdrop-blur border border-transparent rounded-xl p-3 overflow-hidden">
+                            {/* Background effects */}
+                            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                                <div className="absolute top-2 right-3 opacity-30 group-hover:opacity-60 transition-opacity">
+                                    <Sparkles className="w-3 h-3 text-purple-400 animate-pulse" />
+                                </div>
+                                <div className="absolute -top-10 -right-10 w-20 h-20 bg-purple-500/10 rounded-full blur-2xl group-hover:bg-purple-500/20 transition-all" />
+                            </div>
+
+                            <div className="relative flex items-center gap-3">
+                                <div className="relative">
+                                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 via-pink-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-purple-500/20 group-hover:scale-105 transition-transform">
+                                        <Wand2 className="w-5 h-5 text-white" />
+                                    </div>
+                                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-yellow-400 rounded-full flex items-center justify-center animate-pulse">
+                                        <span className="text-[6px] font-bold text-yellow-900">AI</span>
+                                    </div>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="text-sm font-bold bg-gradient-to-r from-purple-300 via-pink-300 to-cyan-300 bg-clip-text text-transparent">
+                                        Quick Start with AI
+                                    </h3>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                        <div className="flex items-center gap-1">
+                                            <Video className="w-3 h-3 text-purple-400" />
+                                            <span className="text-[10px] text-purple-300">Reference</span>
+                                        </div>
+                                        <span className="text-slate-600">|</span>
+                                        <div className="flex items-center gap-1">
+                                            <AudioWaveform className="w-3 h-3 text-cyan-400" />
+                                            <span className="text-[10px] text-cyan-300">Beats</span>
+                                            <span className="text-[8px] px-1 py-0.5 bg-cyan-500/20 rounded text-cyan-400 font-medium">Soon</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-slate-300 group-hover:translate-x-0.5 transition-all" />
+                            </div>
+                        </div>
+                    </button>
+                </div>
 
                 {/* Audio Track */}
                 <div className="pb-4">
@@ -906,8 +1041,21 @@ export default function LeftSidebar() {
             <UpgradeModal
                 isOpen={showUpgradeModal}
                 onClose={() => setShowUpgradeModal(false)}
-                usedCount={creditsUsed}
+                usedCount={creditsUsed ?? 0}
                 limitCount={creditsLimit}
+            />
+
+            {/* AI Tools Modal */}
+            <AIToolsModal
+                isOpen={isAIModalOpen}
+                onClose={() => setIsAIModalOpen(false)}
+                onSelectTool={handleAIToolSelect}
+                currentProject={{
+                    projectName: projectName || 'Current Project',
+                    mediaFilesCount: mediaFiles?.length || 0,
+                    textElementsCount: textElements?.length || 0
+                }}
+                isProcessing={isAnalyzing}
             />
         </div>
     );

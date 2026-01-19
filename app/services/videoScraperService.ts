@@ -2,10 +2,10 @@ import { ApifyClient } from 'apify-client';
 
 /**
  * Video Scraper Service using Apify API
- * Supports TikTok, Instagram, and YouTube
+ * Supports Instagram
  */
 
-export type Platform = 'tiktok' | 'instagram' | 'youtube';
+export type Platform = 'instagram';
 
 export interface ScrapeResult {
   videoUrl: string;
@@ -46,11 +46,9 @@ interface ApifyResultItem {
 }
 
 // Apify Actor IDs for each platform
-// Can be overridden via environment variables: APIFY_ACTOR_TIKTOK, APIFY_ACTOR_INSTAGRAM, APIFY_ACTOR_YOUTUBE
+// Can be overridden via environment variables: APIFY_ACTOR_INSTAGRAM
 const APIFY_ACTORS = {
-  tiktok: process.env.APIFY_ACTOR_TIKTOK || 'apify/tiktok-downloader',
   instagram: process.env.APIFY_ACTOR_INSTAGRAM || 'apify~instagram-scraper',
-  youtube: process.env.APIFY_ACTOR_YOUTUBE || 'apify/youtube-scraper',
 } as const;
 
 const apifyToken = process.env.APIFY_API_TOKEN;
@@ -74,16 +72,6 @@ export function detectPlatform(url: string): Platform | null {
     // Remove 'www.' prefix for consistent matching
     const hostnameWithoutWww = hostname.replace(/^www\./, '');
     
-    // TikTok detection
-    // Supports: tiktok.com, vm.tiktok.com, m.tiktok.com, www.tiktok.com
-    if (
-      hostnameWithoutWww === 'tiktok.com' ||
-      hostname.endsWith('.tiktok.com') ||
-      hostname.includes('tiktok.com')
-    ) {
-      return 'tiktok';
-    }
-    
     // Instagram detection
     // Supports: instagram.com, instagr.am, www.instagram.com, m.instagram.com
     if (
@@ -96,32 +84,13 @@ export function detectPlatform(url: string): Platform | null {
       return 'instagram';
     }
     
-    // YouTube detection
-    // Supports: youtube.com, youtu.be, m.youtube.com, www.youtube.com, youtube-nocookie.com
-    if (
-      hostnameWithoutWww === 'youtube.com' ||
-      hostnameWithoutWww === 'youtu.be' ||
-      hostnameWithoutWww === 'youtube-nocookie.com' ||
-      hostname.endsWith('.youtube.com') ||
-      hostname.includes('youtube.com') ||
-      hostname.includes('youtu.be')
-    ) {
-      return 'youtube';
-    }
-    
     return null;
   } catch {
     // If URL parsing fails, try simple string matching as fallback
     const lowerUrl = url.toLowerCase();
     
-    if (lowerUrl.includes('tiktok.com')) {
-      return 'tiktok';
-    }
     if (lowerUrl.includes('instagram.com') || lowerUrl.includes('instagr.am')) {
       return 'instagram';
-    }
-    if (lowerUrl.includes('youtube.com') || lowerUrl.includes('youtu.be')) {
-      return 'youtube';
     }
     
     return null;
@@ -152,7 +121,7 @@ export async function scrapeVideo(options: ScrapeOptions): Promise<ScrapeResult>
   // Detect platform if not provided
   const detectedPlatform = platform || detectPlatform(url);
   if (!detectedPlatform) {
-    throw new Error('Unsupported platform. Supported platforms: TikTok, Instagram, YouTube');
+    throw new Error('Unsupported platform. Only Instagram is supported.');
   }
   
   // Get Apify API token
@@ -197,21 +166,11 @@ export async function scrapeVideo(options: ScrapeOptions): Promise<ScrapeResult>
  */
 function getPlatformSpecificOptions(platform: Platform): Record<string, unknown> {
   switch (platform) {
-    case 'tiktok':
-      return {
-        downloadVideos: true,
-        downloadCovers: false,
-      };
     case 'instagram':
       return {
         resultsLimit: 1,
         downloadVideos: true,
         downloadCovers: false,
-      };
-    case 'youtube':
-      return {
-        maxResults: 1,
-        downloadVideos: true,
       };
     default:
       return {};
@@ -295,18 +254,6 @@ function extractVideoData(
   console.log(item)
   
   switch (platform) {
-    case 'tiktok':
-      return {
-        videoUrl: item.videoUrl || item.video || item.videoDownloadUrl || '',
-        downloadUrl: item.videoUrl || item.video || item.videoDownloadUrl || '',
-        title: item.text || item.description || '',
-        description: item.text || item.description || '',
-        thumbnail: item.imageUrl || item.cover || '',
-        duration: item.duration,
-        platform,
-        originalUrl,
-      };
-    
     case 'instagram':
       return {
         videoUrl: item.videoUrl || item.video || item.videoDownloadUrl || '',
@@ -315,18 +262,6 @@ function extractVideoData(
         description: item.caption || item.text || '',
         thumbnail: item.displayUrl || item.imageUrl || '',
         duration: item.videoDuration,
-        platform,
-        originalUrl,
-      };
-    
-    case 'youtube':
-      return {
-        videoUrl: item.url || item.videoUrl || '',
-        downloadUrl: item.videoUrl || item.downloadUrl || item.url || '',
-        title: item.title || '',
-        description: item.description || '',
-        thumbnail: item.thumbnailUrl || item.thumbnail || '',
-        duration: item.duration || item.lengthSeconds,
         platform,
         originalUrl,
       };

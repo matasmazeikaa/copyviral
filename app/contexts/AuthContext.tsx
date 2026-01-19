@@ -94,8 +94,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle = async (redirectTo?: string) => {
     const redirectUrl = redirectTo || '/'
-    // Use explicit app URL if set, otherwise fall back to window.location.origin
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
+    // Always use window.location.origin so it works on both localhost and production
+    const baseUrl = window.location.origin
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {

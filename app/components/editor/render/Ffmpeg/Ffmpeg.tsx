@@ -9,16 +9,20 @@ export default function Ffmpeg() {
     const [loadFfmpeg, setLoadedFfmpeg] = useState(false);
     const ffmpegRef = useRef<FFmpeg>(new FFmpeg());
     const [logMessages, setLogMessages] = useState<string>("");
+    const logBufferRef = useRef<string[]>([]);
 
     const loadFFmpegFunction = async () => {
         setLoadedFfmpeg(false);
+        logBufferRef.current = []; // Reset logs on reload
         const baseURL = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd";
 
         const ffmpeg = new FFmpeg();
         ffmpegRef.current = ffmpeg;
 
         ffmpeg.on("log", ({ message }) => {
-            setLogMessages(message);
+            // Keep last 50 log messages for error debugging
+            logBufferRef.current = [...logBufferRef.current.slice(-49), message];
+            setLogMessages(logBufferRef.current.join('\n'));
         });
 
         await ffmpeg.load({

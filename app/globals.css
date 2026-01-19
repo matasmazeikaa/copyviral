@@ -64,19 +64,170 @@
     background-size: 200% 100%;
 }
 
-/* Zoom out the editor interface to fit better at 100% browser zoom */
-.editor-container {
-    transform: scale(0.92);
-    transform-origin: top left;
-    width: calc(100vw / 0.92); /* Compensate for 0.92 scale */
-    height: calc(100vh / 0.92); /* Compensate for 0.92 scale */
-    display: flex;
-    flex-direction: column;
-    overflow: visible;
+/* Progress bar shimmer animation */
+@keyframes progress-shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(200%);
+    }
+}
+
+.animate-progress-shimmer {
+    animation: progress-shimmer 1.5s ease-in-out infinite;
+}
+
+/* Zoom out the editor interface to fit better at 100% browser zoom - Desktop only */
+@media (min-width: 1024px) {
+    .editor-container {
+        transform: scale(0.92);
+        transform-origin: top left;
+        width: calc(100vw / 0.92);
+        height: calc(100vh / 0.92);
+        display: flex;
+        flex-direction: column;
+        overflow: visible;
+    }
+}
+
+/* Mobile editor container - no scaling */
+@media (max-width: 1023px) {
+    .editor-container {
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
 }
 
 /* Ensure timeline is always visible and not cut off */
 .editor-container > div:last-child {
     position: relative;
     z-index: 10;
+}
+
+/* Mobile sidebar drawer animations */
+@keyframes slideInLeft {
+    from {
+        transform: translateX(-100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+    }
+    to {
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideOutLeft {
+    from {
+        transform: translateX(0);
+    }
+    to {
+        transform: translateX(-100%);
+    }
+}
+
+@keyframes slideOutRight {
+    from {
+        transform: translateX(0);
+    }
+    to {
+        transform: translateX(100%);
+    }
+}
+
+.animate-slide-in-left {
+    animation: slideInLeft 0.3s ease-out forwards;
+}
+
+.animate-slide-in-right {
+    animation: slideInRight 0.3s ease-out forwards;
+}
+
+.animate-slide-out-left {
+    animation: slideOutLeft 0.3s ease-out forwards;
+}
+
+.animate-slide-out-right {
+    animation: slideOutRight 0.3s ease-out forwards;
+}
+
+/* Mobile bottom sheet animation */
+@keyframes slideUp {
+    from {
+        transform: translateY(100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(0);
+    }
+    to {
+        transform: translateY(100%);
+    }
+}
+
+.animate-slide-up {
+    animation: slideUp 0.3s ease-out forwards;
+}
+
+.animate-slide-down {
+    animation: slideDown 0.3s ease-out forwards;
+}
+
+/* Mobile-specific utilities */
+@layer utilities {
+    .touch-pan-x {
+        touch-action: pan-x;
+    }
+    .touch-pan-y {
+        touch-action: pan-y;
+    }
+    .touch-manipulation {
+        touch-action: manipulation;
+    }
+    .safe-bottom {
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .safe-top {
+        padding-top: env(safe-area-inset-top, 0px);
+    }
+}
+
+/* Hide scrollbar but allow scrolling */
+.scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+    display: none;
+}
+
+/* Mobile overlay backdrop */
+.mobile-overlay {
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+}
+
+/* Prevent text selection on mobile for interactive elements */
+.no-select {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
 }

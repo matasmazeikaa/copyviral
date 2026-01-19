@@ -1,16 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/app/utils/supabase/server';
+import { 
+  STORAGE_LIMITS, 
+  MAX_FILE_SIZE_BYTES, 
+  MAX_FILE_SIZE_DISPLAY,
+  isAllowedFileType,
+} from '@/app/constants/storage';
 
 const STORAGE_BUCKET = 'media-library';
-
-// Storage limits in bytes
-const STORAGE_LIMITS = {
-  free: 5 * 1024 * 1024 * 1024, // 5GB
-  pro: 100 * 1024 * 1024 * 1024, // 100GB
-};
-
-// Maximum file size per upload (5GB)
-const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024;
 
 export async function GET(request: NextRequest) {
   try {
@@ -65,7 +62,7 @@ export async function GET(request: NextRequest) {
       remainingBytes,
       usagePercentage,
       fileCount: files?.length || 0,
-      maxFileSize: MAX_FILE_SIZE,
+      maxFileSize: MAX_FILE_SIZE_BYTES,
     });
   } catch (error: any) {
     console.error('Check storage limit error:', error);
@@ -78,7 +75,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST endpoint to validate if a file can be uploaded
- * Body: { fileSize: number }
+ * Body: { fileSize: number, mimeType?: string }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -90,17 +87,25 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { fileSize } = body;
+    const { fileSize, mimeType } = body;
 
     if (typeof fileSize !== 'number' || fileSize <= 0) {
       return NextResponse.json({ error: 'Invalid file size' }, { status: 400 });
     }
 
-    // Check individual file size limit
-    if (fileSize > MAX_FILE_SIZE) {
+    // Check file type (only video and audio allowed)
+    if (mimeType && !isAllowedFileType(mimeType)) {
       return NextResponse.json({
         canUpload: false,
-        error: 'File exceeds maximum size of 5GB per file',
+        error: 'Only video and audio files are allowed. Images are not supported.',
+      }, { status: 400 });
+    }
+
+    // Check individual file size limit (1GB)
+    if (fileSize > MAX_FILE_SIZE_BYTES) {
+      return NextResponse.json({
+        canUpload: false,
+        error: `File exceeds maximum size of ${MAX_FILE_SIZE_DISPLAY} per file`,
       }, { status: 400 });
     }
 

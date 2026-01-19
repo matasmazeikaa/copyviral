@@ -1,6 +1,7 @@
 import React from "react";
 import { AbsoluteFill, OffthreadVideo, Sequence } from "remotion";
 import { MediaFile } from "@/app/types";
+import { volumeToLinear } from "@/app/utils/utils";
 
 const REMOTION_SAFE_FRAME = 0;
 const CANVAS_WIDTH = 1080;
@@ -52,6 +53,10 @@ export const VideoSequenceItem: React.FC<VideoSequenceItemProps> = ({ item, opti
         from: (item.startTime) / playbackRate,
         to: (item.endTime) / playbackRate
     };
+    
+    // Debug: Log audio-related values
+    const linearVolume = volumeToLinear(item.volume ?? 50);
+    console.log(`VideoSequenceItem [${item.id.slice(0,8)}]: volume=${item.volume}, linearVolume=${linearVolume.toFixed(3)}, startTime=${item.startTime}, endTime=${item.endTime}, startFrom=${trim.from * fps}, endAt=${trim.to * fps}`);
 
     // Render placeholder if this is a placeholder
     if (item.isPlaceholder) {
@@ -152,7 +157,7 @@ export const VideoSequenceItem: React.FC<VideoSequenceItemProps> = ({ item, opti
                                 endAt={(trim.to) * fps + REMOTION_SAFE_FRAME}
                                 playbackRate={playbackRate}
                                 src={item.src}
-                                volume={item.volume / 100 || 100}
+                                volume={linearVolume}
                                 style={{
                                     pointerEvents: "none",
                                     top: 0,

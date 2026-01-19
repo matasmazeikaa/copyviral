@@ -560,7 +560,7 @@ export default function AITools() {
                     type="text"
                     value={referenceUrl}
                     onChange={(e) => setReferenceUrl(e.target.value)}
-                    placeholder="Paste TikTok, Instagram, or YouTube URL"
+                    placeholder="Paste Instagram URL"
                     disabled={isImporting || (!canUseAI && !!user)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !isImporting && canUseAI) {
@@ -584,9 +584,7 @@ export default function AITools() {
             {/* Supported platforms */}
             <div className="flex items-center justify-center gap-3 pt-1">
               <span className="text-[9px] text-slate-500">Works with:</span>
-              {['TikTok', 'Instagram', 'YouTube'].map((platform) => (
-                <span key={platform} className="text-[9px] text-slate-400 font-medium">{platform}</span>
-              ))}
+              <span className="text-[9px] text-slate-400 font-medium">Instagram</span>
             </div>
           </div>
         </div>

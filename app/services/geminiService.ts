@@ -34,7 +34,7 @@ export const generateViralTitle = async (context: string): Promise<string> => {
 
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Generate a single, short, viral, catchy TikTok/Instagram caption (max 4 words) based on this context: "${context}". Do not use quotes. Include one emoji.`,
+      contents: `Generate a single, short, viral, catchy Instagram caption (max 4 words) based on this context: "${context}". Do not use quotes. Include one emoji.`,
     });
 
     return response.text?.trim() || "Viral Edit 🔥";

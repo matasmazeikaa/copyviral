@@ -20,7 +20,8 @@ import UpgradeModal from "../../../components/UpgradeModal";
 import { toast } from 'react-hot-toast';
 import { DEFAULT_TEXT_STYLE } from "../../../constants";
 import { incrementAIUsage } from "../../../services/subscriptionService";
-import { Link, Loader2, Eye, Scissors, Brain, Zap, Sparkles } from 'lucide-react';
+import { useAIAnalysis } from "../../../contexts/AIAnalysisContext";
+import { Link, Loader2, Eye, Scissors, Brain, Zap, Sparkles, Menu, X, Layers, Settings, ChevronUp, ChevronDown } from 'lucide-react';
 
 // AI Loading Modal Component for auto-analyze - uses portal for true full-page overlay
 function AILoadingModal({ isOpen, stage }: { isOpen: boolean; stage: 'downloading' | 'analyzing' | 'processing' }) {
@@ -213,13 +214,46 @@ export default function Project({ params }: { params: { id: string } }) {
     const router = useRouter();
     const searchParams = useSearchParams();
     
-    // Auto-analyze state
+    // AI Analysis context - for direct triggering from sidebar
+    const { 
+        isAnalyzing: isContextAnalyzing, 
+        loadingStage: contextLoadingStage, 
+        pendingUrl,
+        setLoadingStage: setContextLoadingStage,
+        completeAnalysis 
+    } = useAIAnalysis();
+    
+    // Auto-analyze state (for URL param based triggering)
     const [isAutoAnalyzing, setIsAutoAnalyzing] = useState(false);
     const [loadingStage, setLoadingStage] = useState<'downloading' | 'analyzing' | 'processing'>('downloading');
-    const autoAnalyzeTriggered = useRef(false);
+    // Track which URL was analyzed (not just boolean) so user can retry with new URL
+    const autoAnalyzeTriggered = useRef<string | null>(null);
+    const contextAnalyzeTriggered = useRef<string | null>(null);
+    
+    // Mobile state management
+    const [isMobileLeftOpen, setIsMobileLeftOpen] = useState(false);
+    const [isMobileRightOpen, setIsMobileRightOpen] = useState(false);
+    const [isTimelineExpanded, setIsTimelineExpanded] = useState(true);
+    const [isMobile, setIsMobile] = useState(false);
+    
+    // Detect mobile on mount and resize
+    useEffect(() => {
+        const checkMobile = () => {
+            setIsMobile(window.innerWidth < 1024);
+        };
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+    
+    // Close sidebars when clicking outside on mobile
+    const closeMobilePanels = () => {
+        setIsMobileLeftOpen(false);
+        setIsMobileRightOpen(false);
+    };
     
     // AI credits info
-    const creditsUsed = usageInfo?.used || 0;
+    const creditsUsed = usageInfo?.used ?? null;
     const creditsLimit = typeof usageInfo?.limit === 'number' ? usageInfo.limit : 3;
     
     // Calculate frame info for status bar
@@ -355,20 +389,27 @@ export default function Project({ params }: { params: { id: string } }) {
         saveProject();
     }, [projectState, dispatch, currentProjectId]);
 
-    // Auto-analyze handler
-    const handleAutoAnalyze = useCallback(async (referenceUrl: string) => {
+    // Auto-analyze handler - useContext flag indicates if triggered from context (sidebar)
+    const handleAutoAnalyze = useCallback(async (referenceUrl: string, useContext: boolean = false) => {
         if (!user) {
             toast.error("Please sign in to use AI features");
+            if (useContext) completeAnalysis();
             return;
         }
 
         if (!canUseAI) {
             setShowUpgradeModal(true);
+            if (useContext) completeAnalysis();
             return;
         }
 
-        setIsAutoAnalyzing(true);
-        setLoadingStage('downloading');
+        // Set loading state appropriately
+        if (useContext) {
+            setContextLoadingStage('downloading');
+        } else {
+            setIsAutoAnalyzing(true);
+            setLoadingStage('downloading');
+        }
         dispatch(setActiveSection('AI'));
 
         try {
@@ -404,7 +445,11 @@ export default function Project({ params }: { params: { id: string } }) {
             const file = new File([blob], filename, { type: blob.type || "video/mp4" });
 
             // Now analyze the video
-            setLoadingStage('analyzing');
+            if (useContext) {
+                setContextLoadingStage('analyzing');
+            } else {
+                setLoadingStage('analyzing');
+            }
 
             const formData = new FormData();
             formData.append("file", file);
@@ -421,7 +466,11 @@ export default function Project({ params }: { params: { id: string } }) {
 
             const result: AnalyzeVideoResult = await analyzeResponse.json();
 
-            setLoadingStage('processing');
+            if (useContext) {
+                setContextLoadingStage('processing');
+            } else {
+                setLoadingStage('processing');
+            }
 
             // Increment AI usage
             await incrementAIUsage('video_analysis', { fileName: file.name });
@@ -553,20 +602,33 @@ export default function Project({ params }: { params: { id: string } }) {
                 toast.error(error?.message || "Failed to analyze video. Please try again.");
             }
         } finally {
-            setIsAutoAnalyzing(false);
+            if (useContext) {
+                completeAnalysis();
+            } else {
+                setIsAutoAnalyzing(false);
+            }
         }
-    }, [user, canUseAI, dispatch, filesID, textElements, refreshUsage, router, id]);
+    }, [user, canUseAI, dispatch, filesID, textElements, refreshUsage, router, id, completeAnalysis, setContextLoadingStage]);
 
     // Auto-analyze effect - trigger when project is loaded and URL param exists
     useEffect(() => {
         const autoAnalyzeUrl = searchParams.get('autoAnalyze');
         
-        if (autoAnalyzeUrl && !isLoading && currentProjectId === id && !autoAnalyzeTriggered.current) {
-            autoAnalyzeTriggered.current = true;
+        // Only trigger if we have a new URL that wasn't already analyzed
+        if (autoAnalyzeUrl && !isLoading && currentProjectId === id && autoAnalyzeTriggered.current !== autoAnalyzeUrl) {
+            autoAnalyzeTriggered.current = autoAnalyzeUrl;
             const decodedUrl = decodeURIComponent(autoAnalyzeUrl);
-            handleAutoAnalyze(decodedUrl);
+            handleAutoAnalyze(decodedUrl, false);
         }
     }, [searchParams, isLoading, currentProjectId, id, handleAutoAnalyze]);
+
+    // Context-based analysis - trigger immediately when pendingUrl is set from sidebar
+    useEffect(() => {
+        if (pendingUrl && !isLoading && currentProjectId === id && contextAnalyzeTriggered.current !== pendingUrl) {
+            contextAnalyzeTriggered.current = pendingUrl;
+            handleAutoAnalyze(pendingUrl, true);
+        }
+    }, [pendingUrl, isLoading, currentProjectId, id, handleAutoAnalyze]);
 
     return (
         <div className="fixed inset-0 overflow-hidden bg-[#0f172a]">
@@ -584,24 +646,129 @@ export default function Project({ params }: { params: { id: string } }) {
                     </div>
                 )}
                 
+                {/* Mobile Navigation Bar */}
+                {isMobile && (
+                    <div className="flex items-center justify-between px-3 py-2 bg-slate-900/95 border-b border-slate-800 z-30 safe-top">
+                        <button
+                            onClick={() => setIsMobileLeftOpen(true)}
+                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white transition-colors"
+                            aria-label="Open assets panel"
+                        >
+                            <Menu className="w-5 h-5" />
+                        </button>
+                        <div className="flex items-center gap-2">
+                            <Zap className="w-5 h-5 text-purple-400" />
+                            <span className="text-sm font-semibold text-white truncate max-w-[150px]">
+                                {projectState.projectName || 'Project'}
+                            </span>
+                        </div>
+                        <button
+                            onClick={() => setIsMobileRightOpen(true)}
+                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white transition-colors"
+                            aria-label="Open properties panel"
+                        >
+                            <Settings className="w-5 h-5" />
+                        </button>
+                    </div>
+                )}
 
                 {/* Main Content */}
                 <div className="flex flex-1 overflow-hidden min-h-0">
-                    {/* Left Sidebar */}
-                    <LeftSidebar />
+                    {/* Left Sidebar - Desktop */}
+                    <div className="hidden lg:block">
+                        <LeftSidebar />
+                    </div>
+                    
+                    {/* Mobile Left Sidebar Drawer */}
+                    {isMobile && isMobileLeftOpen && (
+                        <>
+                            <div 
+                                className="fixed inset-0 mobile-overlay z-40"
+                                onClick={closeMobilePanels}
+                            />
+                            <div className="fixed inset-y-0 left-0 z-50 w-[85vw] max-w-[320px] animate-slide-in-left safe-top">
+                                <div className="h-full flex flex-col bg-[#0f172a]">
+                                    <div className="flex items-center justify-between p-3 border-b border-slate-800">
+                                        <span className="text-sm font-semibold text-white">Assets & Tools</span>
+                                        <button
+                                            onClick={() => setIsMobileLeftOpen(false)}
+                                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                    <div className="flex-1 overflow-hidden">
+                                        <LeftSidebar />
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
 
                     {/* Center - Video Preview */}
                     <div className="flex items-center justify-center flex-col flex-1 overflow-hidden bg-[#0a0e1a] min-w-0">
                         <PreviewPlayer />
                     </div>
 
-                    {/* Right Sidebar */}
-                    <RightSidebar />
+                    {/* Right Sidebar - Desktop */}
+                    <div className="hidden lg:block">
+                        <RightSidebar />
+                    </div>
+                    
+                    {/* Mobile Right Sidebar Drawer */}
+                    {isMobile && isMobileRightOpen && (
+                        <>
+                            <div 
+                                className="fixed inset-0 mobile-overlay z-40"
+                                onClick={closeMobilePanels}
+                            />
+                            <div className="fixed inset-y-0 right-0 z-50 w-[85vw] max-w-[320px] animate-slide-in-right safe-top">
+                                <div className="h-full flex flex-col bg-[#0f172a]">
+                                    <div className="flex items-center justify-between p-3 border-b border-slate-800">
+                                        <span className="text-sm font-semibold text-white">Properties</span>
+                                        <button
+                                            onClick={() => setIsMobileRightOpen(false)}
+                                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                                        >
+                                            <X className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                    <div className="flex-1 overflow-hidden">
+                                        <RightSidebar />
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
 
-                {/* Timeline at bottom - ensure it's always visible */}
-                <div className="flex flex-row border-t border-slate-800 bg-[#0f172a] z-1 flex-shrink-0 overflow-visible" style={{ zIndex: 1 }}>
-                    <div className="flex-1 flex flex-col !z-1 min-w-0 overflow-visible">
+                {/* Timeline at bottom - with mobile collapse toggle */}
+                <div className="flex flex-col border-t border-slate-800 bg-[#0f172a] z-10 flex-shrink-0 overflow-visible safe-bottom">
+                    {/* Mobile timeline toggle */}
+                    {isMobile && (
+                        <button
+                            onClick={() => setIsTimelineExpanded(!isTimelineExpanded)}
+                            className="flex items-center justify-center gap-2 py-2 bg-slate-800/50 hover:bg-slate-800 transition-colors"
+                        >
+                            {isTimelineExpanded ? (
+                                <>
+                                    <ChevronDown className="w-4 h-4 text-slate-400" />
+                                    <span className="text-xs text-slate-400">Hide Timeline</span>
+                                </>
+                            ) : (
+                                <>
+                                    <ChevronUp className="w-4 h-4 text-slate-400" />
+                                    <span className="text-xs text-slate-400">Show Timeline</span>
+                                </>
+                            )}
+                        </button>
+                    )}
+                    
+                    <div 
+                        className={`flex-1 flex flex-col min-w-0 overflow-visible transition-all duration-300 ${
+                            isMobile && !isTimelineExpanded ? 'h-0 overflow-hidden' : ''
+                        }`}
+                    >
                         <Timeline />
                     </div>
                 </div>
@@ -610,12 +777,15 @@ export default function Project({ params }: { params: { id: string } }) {
                 <UpgradeModal
                     isOpen={showUpgradeModal}
                     onClose={() => setShowUpgradeModal(false)}
-                    usedCount={creditsUsed}
+                    usedCount={creditsUsed ?? 0}
                     limitCount={creditsLimit}
                 />
 
-                {/* AI Loading Modal for auto-analyze */}
-                <AILoadingModal isOpen={isAutoAnalyzing} stage={loadingStage} />
+                {/* AI Loading Modal for auto-analyze (shows for both URL-based and context-based triggers) */}
+                <AILoadingModal 
+                    isOpen={isAutoAnalyzing || isContextAnalyzing} 
+                    stage={isContextAnalyzing ? contextLoadingStage : loadingStage} 
+                />
             </div>
         </div>
     );

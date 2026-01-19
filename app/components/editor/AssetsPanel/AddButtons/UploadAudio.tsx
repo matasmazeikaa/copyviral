@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import { MediaFile } from "../../../../types";
 import { uploadMediaFile } from "../../../../services/mediaLibraryService";
 import { getAudioDuration } from "../../../../utils/videoDimensions";
+import { validateFilesForUpload } from "../../../../constants/storage";
 
 const DEFAULT_MEDIA_TIME = 2;
 
@@ -19,11 +20,22 @@ export default function UploadAudio() {
     const { user } = useAuth();
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newFiles = Array.from(e.target.files || []);
-        if (newFiles.length === 0) return;
+        const selectedFiles = Array.from(e.target.files || []);
+        if (selectedFiles.length === 0) return;
 
         if (!user || !projectId) {
             toast.error('You must be logged in and have a project open to upload files');
+            e.target.value = "";
+            return;
+        }
+
+        // Validate files (check size limit: 1GB)
+        const { validFiles: newFiles, errors } = validateFilesForUpload(selectedFiles);
+        
+        // Show errors for invalid files
+        errors.forEach(error => toast.error(error));
+        
+        if (newFiles.length === 0) {
             e.target.value = "";
             return;
         }

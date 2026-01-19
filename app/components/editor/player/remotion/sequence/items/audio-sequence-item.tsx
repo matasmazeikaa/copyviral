@@ -1,6 +1,7 @@
 import { MediaFile } from "@/app/types";
 import { AbsoluteFill, Sequence } from "remotion";
 import { Audio } from "remotion";
+import { volumeToLinear } from "@/app/utils/utils";
 
 const REMOTION_SAFE_FRAME = 0;
 
@@ -72,7 +73,7 @@ export const AudioSequenceItem: React.FC<{ item: MediaFile; options: SequenceIte
                         endAt={(trim.to) * fps + REMOTION_SAFE_FRAME}
                         playbackRate={playbackRate}
                         src={item.src || ""}
-                        volume={item.volume / 100 || 100}
+                        volume={volumeToLinear(item.volume ?? 50)}
                     />
                 </AbsoluteFill>
             </Sequence>

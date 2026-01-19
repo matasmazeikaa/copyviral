@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     // Get user profile with subscription info
     const { data: profile, error: profileError } = await supabase
       .from('user_profiles')
-      .select('subscriptionStatus, aiGenerationsUsed, aiGenerationsResetAt')
+      .select('subscriptionStatus, aiGenerationsUsed')
       .eq('id', user.id)
       .single();
 
@@ -28,32 +28,13 @@ export async function GET(request: NextRequest) {
     const aiGenerationsUsed = profile?.aiGenerationsUsed || 0;
     const isPremium = subscriptionStatus === 'active';
 
-    // Check if we need to reset monthly counter
-    const resetAt = profile?.aiGenerationsResetAt ? new Date(profile.aiGenerationsResetAt) : null;
-    const oneMonthAgo = new Date();
-    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-
-    let effectiveUsage = aiGenerationsUsed;
-    if (resetAt && resetAt < oneMonthAgo) {
-      // Reset the counter
-      effectiveUsage = 0;
-      await supabase
-        .from('user_profiles')
-        .upsert({
-          id: user.id,
-          aiGenerationsUsed: 0,
-          aiGenerationsResetAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-    }
-
-    const canGenerate = isPremium || effectiveUsage < FREE_TIER_LIMIT;
-    const remaining = isPremium ? 'unlimited' : Math.max(0, FREE_TIER_LIMIT - effectiveUsage);
+    const canGenerate = isPremium || aiGenerationsUsed < FREE_TIER_LIMIT;
+    const remaining = isPremium ? 'unlimited' : Math.max(0, FREE_TIER_LIMIT - aiGenerationsUsed);
 
     return NextResponse.json({
       canGenerate,
       isPremium,
-      used: effectiveUsage,
+      used: aiGenerationsUsed,
       limit: isPremium ? 'unlimited' : FREE_TIER_LIMIT,
       remaining,
     });

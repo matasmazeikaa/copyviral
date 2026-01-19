@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { Crown, Sparkles, X, Zap, ArrowRight } from 'lucide-react';
 
@@ -17,16 +19,21 @@ export default function UpgradeModal({
   limitCount = 3 
 }: UpgradeModalProps) {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!isOpen || !mounted) return null;
 
   const handleUpgrade = () => {
     onClose();
     router.push('/subscription');
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+  const modalContent = (
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center">
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -34,7 +41,7 @@ export default function UpgradeModal({
       />
       
       {/* Modal */}
-      <div className="relative w-full max-w-md mx-4 bg-gradient-to-b from-slate-900 to-slate-950 rounded-2xl border border-slate-800 shadow-2xl shadow-purple-500/10 overflow-hidden">
+      <div className="relative w-full sm:max-w-md sm:mx-4 bg-gradient-to-b from-slate-900 to-slate-950 rounded-t-2xl sm:rounded-2xl border-t sm:border border-slate-800 shadow-2xl shadow-purple-500/10 overflow-hidden safe-bottom">
         {/* Glow effect */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 bg-purple-500/20 blur-[80px]" />
         
@@ -128,5 +135,7 @@ export default function UpgradeModal({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
 

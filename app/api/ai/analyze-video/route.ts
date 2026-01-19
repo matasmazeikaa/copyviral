@@ -9,7 +9,8 @@ const VIDEO_ANALYSIS_PROMPT = `Act as a **Frame-Perfect Video Telemetry Engine**
 **CRITICAL PROCESSING RULES:**
 1. **Step-by-Step Analysis:** Before generating JSON, internally scan the video timeline to map visual anchors.
 2. **Zero-Guessing Policy:** If a text overlay is blurry, mark it as "[UNCLEAR]". Do not invent text.
-3. **Coordinate Space:** Use a standard **1080x1920 (9:16)** grid.
+3. **NO AUDIO TRANSCRIPTION:** Do NOT transcribe spoken words/audio. Only detect text VISUALLY RENDERED on screen as graphics. If no on-screen text exists, text_layers must be empty [].
+4. **Coordinate Space:** Use a standard **1080x1920 (9:16)** grid.
    - X: 0 (Left) -> 1080 (Right)
    - Y: 0 (Top) -> 1920 (Bottom)
 4. **Consistency Check:** The sum of all shot durations MUST match the total video length exactly.
@@ -21,7 +22,6 @@ Analyze the video to identify every distinct "Shot."
 - A **"Shot"** is defined as a continuous sequence from a single camera angle/source.
 - **CUT LOGIC:**
    - Detect **Hard Cuts** (instant change).
-   - Detect **Transitions** (Dissolves/Fades) -> Mark the cut at the 50% opacity point.
    - Ignore **Motion** (Pans, Tilts, Zooms do NOT count as cuts).
 
 *Required Output Data per Shot:*
@@ -45,15 +45,21 @@ For the *majority* of the video, determine the "Active Video Area" (excluding bl
    - Estimate the [x, y, width, height] of the actual video content in pixels (relative to the 1080x1920 canvas).
 
 ---------------------------------------------------------
-TASK 3 — TEXT & OCR EXTRACTION
+TASK 3 — VISIBLE TEXT OVERLAY EXTRACTION (OCR Only)
 ---------------------------------------------------------
-Extract every distinct text layer. Handle "Pop-in" captions as separate events.
+Extract ONLY text that is **visually rendered as graphics/overlays** on the video frames.
 
-- **Transcription:** Case-sensitive, punctuation-perfect.
+**CRITICAL: DO NOT transcribe audio/speech. DO NOT include spoken words. ONLY detect text that you can SEE rendered on screen as visual graphics.**
+
+If no visible text overlays exist in the video, return an empty text_layers array: []
+
+- **What to detect:** Text graphics, titles, captions burned into the video, watermarks, labels, on-screen text
+- **What to IGNORE:** Spoken audio, narration, dialogue - these are NOT text layers
+- **Transcription:** Case-sensitive, punctuation-perfect for visible text only.
 - **Type Classification:**
-   - caption: Spoken words/subtitles (usually bottom center).
-   - label: UI elements, names, or context tags.
-   - title: Large distinct headers.
+   - caption: Subtitle text visually burned into video frames (not auto-generated from audio).
+   - label: UI elements, names, or context tags rendered on screen.
+   - title: Large distinct headers/titles visible on screen.
 - **Geometry:**
    - bbox: [x, y, width, height] in pixels (approximate based on 1080x1920 grid).
    - color: Dominant text color (e.g., "white", "yellow").
@@ -222,39 +228,51 @@ const mergeTextLayers = (allLayers: any[][]): any[] => {
     }
   }
 
-  // For each group, merge into a single layer (prefer layers found in 2+ analyses)
+  // For each group, merge into a single layer (require strict consensus: found in 2+ analyses)
   const merged: any[] = [];
+  const validAnalysesCount = allLayers.filter((l) => l.length > 0).length;
+  
   for (const group of groups) {
-    // Only include if found in at least 2 analyses (consensus) or if only 1 analysis worked
     const uniqueSources = new Set(group.map((g) => g.source));
-    if (uniqueSources.size >= 2 || allLayers.filter((l) => l.length > 0).length < 2) {
-      // Average the numeric values
-      const starts = group.map((g) => g.layer.start || 0);
-      const ends = group.map((g) => g.layer.end || 0);
-      const bboxes = group
-        .map((g) => g.layer.bbox)
-        .filter((b) => Array.isArray(b) && b.length >= 4);
-
-      const mergedLayer: any = {
-        content: group[0].layer.content,
-        start: average(starts),
-        end: average(ends),
-        type: majorityVote(group.map((g) => g.layer.type || "caption")),
-        position: majorityVote(group.map((g) => g.layer.position || "middle")),
-      };
-
-      // Average bbox if available
-      if (bboxes.length > 0) {
-        mergedLayer.bbox = [
-          average(bboxes.map((b) => b[0])),
-          average(bboxes.map((b) => b[1])),
-          average(bboxes.map((b) => b[2])),
-          average(bboxes.map((b) => b[3])),
-        ];
-      }
-
-      merged.push(mergedLayer);
+    const content = (group[0].layer.content || "").trim();
+    
+    // Filter out unclear or empty text
+    if (!content || content === "[UNCLEAR]" || content.toLowerCase() === "unclear") {
+      continue;
     }
+    
+    // Require text to be found in at least 2 analyses for consensus (stricter filtering)
+    // This helps filter out AI hallucinations that only appear in one analysis
+    if (uniqueSources.size < 2 && validAnalysesCount >= 2) {
+      continue;
+    }
+    
+    // Average the numeric values
+    const starts = group.map((g) => g.layer.start || 0);
+    const ends = group.map((g) => g.layer.end || 0);
+    const bboxes = group
+      .map((g) => g.layer.bbox)
+      .filter((b) => Array.isArray(b) && b.length >= 4);
+
+    const mergedLayer: any = {
+      content: content,
+      start: average(starts),
+      end: average(ends),
+      type: majorityVote(group.map((g) => g.layer.type || "caption")),
+      position: majorityVote(group.map((g) => g.layer.position || "middle")),
+    };
+
+    // Average bbox if available
+    if (bboxes.length > 0) {
+      mergedLayer.bbox = [
+        average(bboxes.map((b) => b[0])),
+        average(bboxes.map((b) => b[1])),
+        average(bboxes.map((b) => b[2])),
+        average(bboxes.map((b) => b[3])),
+      ];
+    }
+
+    merged.push(mergedLayer);
   }
 
   // Sort by start time
@@ -346,6 +364,9 @@ export async function POST(request: NextRequest) {
     ];
 
     const results = await Promise.all(analysisPromises);
+
+
+    console.log("Results:", results);
     const validResults = results.filter((r) => r !== null);
 
     console.log(`${validResults.length}/3 analyses succeeded`);

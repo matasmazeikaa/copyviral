@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { LibraryItem, MediaType } from "@/app/types";
 import { listUserMediaFiles, deleteMediaFile } from "@/app/services/mediaLibraryService";
 import { useAuth } from "@/app/contexts/AuthContext";
@@ -60,7 +61,13 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
     const [deletingItems, setDeletingItems] = useState<Set<string>>(new Set());
     const [isDeletingSelected, setIsDeletingSelected] = useState(false);
     const [storageInfo, setStorageInfo] = useState<StorageLimitInfo | null>(null);
+    const [mounted, setMounted] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    
+    // Mount check for portal
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const config = CONFIG[type];
     const usagePercentage = storageInfo ? Math.min((storageInfo.usedBytes / storageInfo.limitBytes) * 100, 100) : 0;
@@ -119,15 +126,22 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
         setSelectedItems(newSelected);
     };
 
+    const [isAddingToTimeline, setIsAddingToTimeline] = useState(false);
+
     const handleAdd = () => {
         const selected = items.filter(item => selectedItems.has(item.id));
         if (selected.length === 0) {
             toast.error('Please select at least one item');
             return;
         }
-        onAddToTimeline(selected);
-        setSelectedItems(new Set());
-        onClose();
+        setIsAddingToTimeline(true);
+        // Small delay to show the button state change before modal closes
+        setTimeout(() => {
+            onAddToTimeline(selected);
+            setSelectedItems(new Set());
+            setIsAddingToTimeline(false);
+            onClose();
+        }, 100);
     };
 
     const uploadFileWithProgress = useCallback(async (
@@ -402,18 +416,18 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
     const isUploading = uploadingFiles.some(f => f.status === 'uploading');
     const EmptyIcon = config.emptyIcon;
 
-    if (!isOpen) return null;
+    if (!isOpen || !mounted) return null;
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-            <div className="bg-[#0f172a] border border-slate-800 rounded-xl w-full max-w-4xl max-h-[80vh] flex flex-col">
+    const modalContent = (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm">
+            <div className="bg-[#0f172a] border-t sm:border border-slate-800 rounded-t-xl sm:rounded-xl w-full sm:max-w-4xl max-h-[85vh] sm:max-h-[80vh] flex flex-col safe-bottom">
                 {/* Header */}
-                <div className="flex items-center justify-between p-6 border-b border-slate-800">
-                    <div className="flex items-center gap-4">
-                        <h2 className="text-xl font-bold text-white">{config.title}</h2>
-                        {/* Storage Usage Indicator */}
+                <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-800">
+                    <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+                        <h2 className="text-lg sm:text-xl font-bold text-white">{config.title}</h2>
+                        {/* Storage Usage Indicator - Hidden on mobile, visible on larger screens */}
                         {storageInfo && (
-                            <div className="flex items-center gap-3 px-4 py-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
+                            <div className="hidden sm:flex items-center gap-3 px-3 sm:px-4 py-2 bg-slate-800/50 rounded-lg border border-slate-700/50">
                                 <HardDrive className="w-4 h-4 text-slate-400" />
                                 <div className="flex flex-col gap-1">
                                     <div className="flex items-center gap-2">
@@ -431,7 +445,7 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
                                             </span>
                                         )}
                                     </div>
-                                    <div className="w-32 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                    <div className="w-24 lg:w-32 h-1.5 bg-slate-700 rounded-full overflow-hidden">
                                         <div 
                                             className={`h-full rounded-full transition-all duration-300 ${
                                                 usagePercentage > 90 
@@ -447,11 +461,11 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
                             </div>
                         )}
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3">
                         <button
                             onClick={handleUploadClick}
                             disabled={isUploading}
-                            className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="flex items-center gap-2 px-3 sm:px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isUploading ? (
                                 <>
@@ -556,28 +570,28 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
                 )}
 
                 {/* Items Grid */}
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="flex-1 overflow-y-auto p-3 sm:p-6 scrollbar-hide">
                     {isLoading ? (
                         <div className="flex items-center justify-center py-12">
                             <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
                         </div>
                     ) : items.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16">
-                            <div className="w-20 h-20 rounded-2xl bg-slate-800/80 border border-slate-700/50 flex items-center justify-center mb-6">
-                                {EmptyIcon && <EmptyIcon className="w-10 h-10 text-slate-500" />}
+                        <div className="flex flex-col items-center justify-center py-10 sm:py-16">
+                            <div className="w-16 sm:w-20 h-16 sm:h-20 rounded-2xl bg-slate-800/80 border border-slate-700/50 flex items-center justify-center mb-4 sm:mb-6">
+                                {EmptyIcon && <EmptyIcon className="w-8 sm:w-10 h-8 sm:h-10 text-slate-500" />}
                             </div>
-                            <p className="text-lg font-medium text-slate-300 mb-2">{config.emptyMessage}</p>
-                            <p className="text-sm text-slate-500 mb-6">{config.emptySubMessage}</p>
+                            <p className="text-base sm:text-lg font-medium text-slate-300 mb-2">{config.emptyMessage}</p>
+                            <p className="text-xs sm:text-sm text-slate-500 mb-4 sm:mb-6">{config.emptySubMessage}</p>
                             <button
                                 onClick={handleUploadClick}
-                                className="flex items-center gap-2 px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+                                className="flex items-center gap-2 px-4 sm:px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
                             >
                                 <Upload className="w-4 h-4" />
                                 <span>Upload Files</span>
                             </button>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
                             {items.map((item) => (
                                 <div
                                     key={item.id}
@@ -620,48 +634,57 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-between p-6 border-t border-slate-800">
-                    <span className="text-sm text-slate-400">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 sm:p-6 border-t border-slate-800">
+                    <span className="text-sm text-slate-400 text-center sm:text-left">
                         {selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''} selected
                     </span>
-                    <div className="flex gap-3">
+                    <div className="flex gap-2 sm:gap-3">
                         {selectedItems.size > 0 && (
                             <button
                                 onClick={handleDeleteSelected}
                                 disabled={isDeletingSelected}
-                                className="flex items-center gap-2 px-4 py-2 text-sm bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 sm:py-2 text-sm bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {isDeletingSelected ? (
                                     <>
                                         <Loader2 className="w-4 h-4 animate-spin" />
-                                        <span>Deleting...</span>
+                                        <span className="hidden sm:inline">Deleting...</span>
                                     </>
                                 ) : (
                                     <>
                                         <Trash2 className="w-4 h-4" />
-                                        <span>Delete Selected</span>
+                                        <span className="hidden sm:inline">Delete</span>
                                     </>
                                 )}
                             </button>
                         )}
                         <button
                             onClick={onClose}
-                            className="px-4 py-2 text-sm text-slate-300 hover:text-white transition-colors"
+                            className="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 sm:py-2 text-sm text-slate-300 hover:text-white bg-slate-800 sm:bg-transparent hover:bg-slate-700 sm:hover:bg-transparent rounded-lg transition-colors"
                         >
                             Cancel
                         </button>
                         <button
                             onClick={handleAdd}
-                            disabled={selectedItems.size === 0}
-                            className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={selectedItems.size === 0 || isAddingToTimeline}
+                            className="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 sm:py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 sm:min-w-[140px]"
                         >
-                            Add to Timeline
+                            {isAddingToTimeline ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    <span>Adding...</span>
+                                </>
+                            ) : (
+                                <span>Add to Timeline</span>
+                            )}
                         </button>
                     </div>
                 </div>
             </div>
         </div>
     );
+
+    return createPortal(modalContent, document.body);
 }
 
 // Convenience wrapper components for backwards compatibility

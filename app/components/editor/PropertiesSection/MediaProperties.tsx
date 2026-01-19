@@ -1,48 +1,44 @@
 "use client";
 
 import { useAppSelector } from '../../../store';
-import { setActiveElement, setMediaFiles, setTextElements } from '../../../store/slices/projectSlice';
+import { setMediaFiles } from '../../../store/slices/projectSlice';
 import { MediaFile } from '../../../types';
 import { useAppDispatch } from '../../../store';
 import { calculateVideoFit } from '../../../utils/videoDimensions';
+import { volumeToDB, dbToVolume } from '../../../utils/utils';
 
-// Convert volume (0-100) to dB (-60 to +12)
-// 0-100 maps to -60dB to +12dB, with 50 = 0dB
-function volumeToDB(volume: number): number {
-    // Map 0-100 to -60 to +12
-    // 50 (middle) = 0dB
-    if (volume <= 0) return -60;
-    if (volume >= 100) return 12;
-    
-    // Linear mapping: 0-50 maps to -60 to 0, 50-100 maps to 0 to +12
-    if (volume <= 50) {
-        return (volume / 50) * 60 - 60; // 0-50 -> -60 to 0
-    } else {
-        return ((volume - 50) / 50) * 12; // 50-100 -> 0 to +12
-    }
+interface MediaPropertiesProps {
+    editAll?: boolean;
 }
 
-// Convert dB (-60 to +12) to volume (0-100)
-function dbToVolume(db: number): number {
-    if (db <= -60) return 0;
-    if (db >= 12) return 100;
-    
-    // Inverse mapping
-    if (db <= 0) {
-        return ((db + 60) / 60) * 50; // -60 to 0 -> 0 to 50
-    } else {
-        return 50 + (db / 12) * 50; // 0 to +12 -> 50 to 100
-    }
-}
-
-export default function MediaProperties() {
+export default function MediaProperties({ editAll = false }: MediaPropertiesProps) {
     const { mediaFiles, activeElementIndex } = useAppSelector((state) => state.projectState);
     const mediaFile = mediaFiles[activeElementIndex];
     const dispatch = useAppDispatch();
+
+    // Update single media file
     const onUpdateMedia = (id: string, updates: Partial<MediaFile>) => {
         dispatch(setMediaFiles(mediaFiles.map(media =>
             media.id === id ? { ...media, ...updates } : media
         )));
+    };
+
+    // Update all VIDEO files with the same updates (not audio)
+    const onUpdateAllVideos = (updates: Partial<MediaFile>) => {
+        dispatch(setMediaFiles(mediaFiles.map(media =>
+            media.type === 'video' 
+                ? { ...media, ...updates } 
+                : media
+        )));
+    };
+
+    // Helper that respects editAll mode (only for videos when editAll is on)
+    const updateMedia = (updates: Partial<MediaFile>) => {
+        if (editAll && mediaFile.type === 'video') {
+            onUpdateAllVideos(updates);
+        } else {
+            onUpdateMedia(mediaFile.id, updates);
+        }
     };
 
     // Handle aspect ratio fit change for videos
@@ -181,9 +177,9 @@ export default function MediaProperties() {
                                     onChange={(e) => {
                                         const dbValue = Number(e.target.value);
                                         const volumeValue = dbToVolume(dbValue);
-                                        onUpdateMedia(mediaFile.id, { volume: volumeValue });
+                                        updateMedia({ volume: volumeValue });
                                     }}
-                                    className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                                    className="w-full h-2 rounded-lg appearance-none cursor-pointer"
                                     style={{
                                         background: `linear-gradient(to right, 
                                             #ef4444 0%, 
@@ -208,7 +204,7 @@ export default function MediaProperties() {
                                 max="4"
                                 step="0.1"
                                 value={mediaFile.playbackSpeed || 1}
-                                onChange={(e) => onUpdateMedia(mediaFile.id, { playbackSpeed: Number(e.target.value) })}
+                                onChange={(e) => updateMedia({ playbackSpeed: Number(e.target.value) })}
                                 className="w-full p-2 bg-darkSurfacePrimary border border-white border-opacity-10 shadow-md text-white rounded focus:outline-none focus:ring-2 focus:ring-white-500 focus:border-white-500"
                             />
                         </div> */}

@@ -3,9 +3,14 @@
 import { createClient } from '../utils/supabase/client';
 import { LibraryItem, MediaType } from '../types';
 import { categorizeFile } from '../utils/utils';
+import { 
+    MAX_FILE_SIZE_BYTES, 
+    MAX_FILE_SIZE_DISPLAY,
+    isAllowedFileType,
+    getFileTypeCategory,
+} from '../constants/storage';
 
 const STORAGE_BUCKET = 'media-library';
-const MAX_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5GB in bytes
 
 /**
  * Get the user-specific folder path in Supabase storage
@@ -40,9 +45,14 @@ export async function uploadMediaFile(
     const fileName = `${fileId}.${fileExt}`;
     const filePath = `${userFolder}/${fileName}`;
 
-    // Check file size
-    if (file.size > MAX_FILE_SIZE) {
-        throw new Error(`File size exceeds 5GB limit. Current size: ${(file.size / 1024 / 1024 / 1024).toFixed(2)}GB`);
+    // Check file size (1GB limit)
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+        throw new Error(`File size exceeds ${MAX_FILE_SIZE_DISPLAY} limit. Current size: ${(file.size / 1024 / 1024 / 1024).toFixed(2)}GB`);
+    }
+
+    // Check file type (only video and audio allowed)
+    if (!isAllowedFileType(file.type)) {
+        throw new Error(`File type "${file.type}" is not allowed. Only video and audio files are supported.`);
     }
 
     // Create initial library item with uploading status

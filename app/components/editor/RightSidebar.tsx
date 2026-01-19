@@ -16,6 +16,13 @@ export default function RightSidebar() {
     const [manualScale, setManualScale] = useState(1);
     const [timestampsOverlay, setTimestampsOverlay] = useState(false);
     const [editAllText, setEditAllText] = useState(false);
+    const [editAllVideos, setEditAllVideos] = useState(false);
+
+    // Get video files and check if there are multiple
+    const videoFiles = mediaFiles.filter(m => m.type === 'video');
+    const hasMultipleVideos = videoFiles.length > 1;
+    const selectedMedia = mediaFiles[activeElementIndex];
+    const isVideoSelected = activeElement === 'media' && selectedMedia?.type === 'video';
 
     // Helper function to update text elements (single or all based on editAllText mode)
     const updateTextElements = (index: number, updates: Partial<TextElement>) => {
@@ -34,30 +41,35 @@ export default function RightSidebar() {
 
     // Sync local state with media files when they change
     useEffect(() => {
-        const videoFiles = mediaFiles.filter(m => m.type === 'video');
         if (videoFiles.length > 0) {
-            // Get the first video's scale settings to sync UI
-            const firstVideo = videoFiles[0];
-            if (firstVideo.aspectRatioFit) {
-                if (firstVideo.aspectRatioFit === 'cover') {
+            // Get the selected video's scale settings, or first video if none selected
+            const targetVideo = isVideoSelected ? selectedMedia : videoFiles[0];
+            if (targetVideo?.aspectRatioFit) {
+                if (targetVideo.aspectRatioFit === 'cover') {
                     setVideoScale('fill');
                 } else {
                     // '16:9', 'original', '1:1' all map to 'fit'
                     setVideoScale('fit');
                 }
             }
-            if (firstVideo.zoom !== undefined) {
-                setManualScale(firstVideo.zoom);
+            if (targetVideo?.zoom !== undefined) {
+                setManualScale(targetVideo.zoom);
             }
         }
-    }, [mediaFiles]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mediaFiles, activeElementIndex, isVideoSelected]);
 
 
     const handleVideoScaleChange = (scale: 'fit' | 'fill') => {
         setVideoScale(scale);
-        // Update all video media files with the new scale and recalculate dimensions
+        
         const updated = mediaFiles.map(media => {
-            if (media.type === 'video' && media.originalWidth && media.originalHeight) {
+            // Only update if: editAllVideos is on, OR this is the selected video
+            const shouldUpdate = editAllVideos 
+                ? media.type === 'video'
+                : (isVideoSelected && media.id === selectedMedia?.id);
+            
+            if (shouldUpdate && media.type === 'video' && media.originalWidth && media.originalHeight) {
                 // 'fit' = 16:9 letterbox, 'fill' = cover (fill 9:16)
                 const aspectRatioFit = scale === 'fill' ? 'cover' : '16:9';
                 const zoom = media.zoom || 1.0;
@@ -83,9 +95,14 @@ export default function RightSidebar() {
 
     const handleManualScaleChange = (scale: number) => {
         setManualScale(scale);
-        // Update all video media files with the new zoom and recalculate dimensions
+        
         const updated = mediaFiles.map(media => {
-            if (media.type === 'video' && media.originalWidth && media.originalHeight) {
+            // Only update if: editAllVideos is on, OR this is the selected video
+            const shouldUpdate = editAllVideos 
+                ? media.type === 'video'
+                : (isVideoSelected && media.id === selectedMedia?.id);
+            
+            if (shouldUpdate && media.type === 'video' && media.originalWidth && media.originalHeight) {
                 const aspectRatioFit = media.aspectRatioFit || 'original';
                 const fitResult = calculateVideoFit(
                     media.originalWidth,
@@ -108,15 +125,38 @@ export default function RightSidebar() {
     };
 
     return (
-        <div className="w-72 bg-[#0f172a] border-l border-slate-800 flex flex-col h-full overflow-y-auto shrink-0">
-            <div className="p-6 space-y-6">
+        <div className="w-full lg:w-72 bg-[#0f172a] lg:border-l border-slate-800 flex flex-col h-full overflow-y-auto shrink-0 scrollbar-hide">
+            <div className="p-4 lg:p-6 space-y-4 lg:space-y-6">
                 {/* Media Properties - Show when video/audio is selected */}
                 {activeElement === 'media' && mediaFiles[activeElementIndex] && (
                     <div>
-                        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                            Properties
-                        </h2>
-                        <MediaProperties />
+                        <div className="flex items-center justify-between mb-3">
+                            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                Properties
+                            </h2>
+                            {selectedMedia?.type === 'video' && hasMultipleVideos && (
+                                <button
+                                    onClick={() => setEditAllVideos(!editAllVideos)}
+                                    className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
+                                        editAllVideos
+                                            ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/25'
+                                            : 'bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700'
+                                    }`}
+                                    title="Apply changes to all video clips"
+                                >
+                                    <Layers className="w-3 h-3" />
+                                    {editAllVideos ? 'Editing All' : 'Edit All'}
+                                </button>
+                            )}
+                        </div>
+                        {editAllVideos && selectedMedia?.type === 'video' && hasMultipleVideos && (
+                            <div className="mb-3 p-2 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                                <p className="text-[10px] text-purple-300 font-medium">
+                                    Changes will apply to all {videoFiles.length} video clips
+                                </p>
+                            </div>
+                        )}
+                        <MediaProperties editAll={editAllVideos} />
                     </div>
                 )}
 
@@ -162,24 +202,6 @@ export default function RightSidebar() {
                                         rows={Math.min(Math.max(text.text.split('\n').length, 1), 4)}
                                         wrap="soft"
                                     />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-slate-300 mb-2">Font</label>
-                                    <div className="flex gap-2">
-                                        {['Inter', 'Impact', 'Marker', 'Serif'].map((font) => (
-                                            <button
-                                                key={font}
-                                                onClick={() => updateTextElements(index, { font })}
-                                                className={`flex-1 py-1.5 px-2 text-xs font-bold rounded transition-colors ${
-                                                    text.font === font || (!text.font && font === 'Inter')
-                                                        ? 'bg-blue-600 text-white'
-                                                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                                                }`}
-                                            >
-                                                {font}
-                                            </button>
-                                        ))}
-                                    </div>
                                 </div>
                                 <div className="space-y-2">
                                     <div>
@@ -227,50 +249,62 @@ export default function RightSidebar() {
                     );
                 })()}
 
-                {/* Video Scaling */}
-                <div>
-                    <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
-                        Video Scaling (9:16)
-                    </h2>
-                    <div className="flex gap-2 mb-3">
-                        <button
-                            onClick={() => handleVideoScaleChange('fit')}
-                            className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors ${
-                                videoScale === 'fit'
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                            }`}
-                            title="16:9 letterbox with black bars"
-                        >
-                            Fit (16:9)
-                        </button>
-                        <button
-                            onClick={() => handleVideoScaleChange('fill')}
-                            className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors ${
-                                videoScale === 'fill'
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                            }`}
-                            title="Fill entire 9:16 canvas"
-                        >
-                            Fill
-                        </button>
-                    </div>
+                {/* Video Scaling - Only show when video/media is selected (not text) */}
+                {activeElement !== 'text' && videoFiles.length > 0 && (
                     <div>
-                        <label className="block text-xs font-bold text-slate-400 mb-2">
-                            SCALE: {Math.round(manualScale * 100)}%
-                        </label>
-                        <input
-                            type="range"
-                            min="0.1"
-                            max="3"
-                            step="0.1"
-                            value={manualScale}
-                            onChange={(e) => handleManualScaleChange(Number(e.target.value))}
-                            className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                        />
+                        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+                            Video Scaling (9:16)
+                        </h2>
+                        {!isVideoSelected && !editAllVideos && (
+                            <div className="mb-3 p-2 bg-slate-800/50 border border-slate-700 rounded-lg">
+                                <p className="text-[10px] text-slate-400">
+                                    Select a video to edit, or enable &quot;Edit All&quot; in Properties
+                                </p>
+                            </div>
+                        )}
+                        <div className="flex gap-2 mb-3">
+                            <button
+                                onClick={() => handleVideoScaleChange('fit')}
+                                disabled={!isVideoSelected && !editAllVideos}
+                                className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors ${
+                                    videoScale === 'fit'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                title="16:9 letterbox with black bars"
+                            >
+                                Fit (16:9)
+                            </button>
+                            <button
+                                onClick={() => handleVideoScaleChange('fill')}
+                                disabled={!isVideoSelected && !editAllVideos}
+                                className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors ${
+                                    videoScale === 'fill'
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                title="Fill entire 9:16 canvas"
+                            >
+                                Fill
+                            </button>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-400 mb-2">
+                                SCALE: {Math.round(manualScale * 100)}%
+                            </label>
+                            <input
+                                type="range"
+                                min="0.1"
+                                max="3"
+                                step="0.1"
+                                value={manualScale}
+                                disabled={!isVideoSelected && !editAllVideos}
+                                onChange={(e) => handleManualScaleChange(Number(e.target.value))}
+                                className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                            />
+                        </div>
                     </div>
-                </div>
+                )}
 
                 {/* Generate Video Button */}
                 <div>

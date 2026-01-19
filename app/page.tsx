@@ -4,156 +4,29 @@ import { useEffect, useRef, useState } from 'react';
 import NextLink from "next/link";
 import { useRouter } from 'next/navigation';
 import { useAppDispatch, useAppSelector } from './store';
-import { addProject, deleteProject, rehydrateProjects, setCurrentProject, clearProjects } from './store/slices/projectsSlice';
+import { addProject, deleteProject, rehydrateProjects, setCurrentProject, clearProjects, updateProject } from './store/slices/projectsSlice';
 import { listProjects, storeProject, deleteProject as deleteProjectFromDB } from './store';
 import { listProjectsFromSupabase, loadProjectFromSupabase, deleteProjectFromSupabase, saveProjectToSupabase } from './services/projectService';
 import { ProjectState, MediaFile } from './types';
 import { toast } from 'react-hot-toast';
 import { useAuth } from './contexts/AuthContext';
+import { AIToolsModal, AIToolType } from './components/AIToolsModal';
 import { 
     Plus, 
     Trash2, 
     Film, 
     Clock, 
-    Calendar,
     Loader2,
     FolderOpen,
     Sparkles,
-    Play,
-    Image as ImageIcon,
-    Music,
-    Type,
-    Link,
     Wand2,
-    ArrowRight
+    ArrowRight,
+    Video,
+    AudioWaveform,
+    Pencil,
+    Check,
+    X
 } from 'lucide-react';
-
-// Component to display project thumbnail
-function ProjectThumbnail({ project }: { project: ProjectState }) {
-    const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const videoRef = useRef<HTMLVideoElement>(null);
-
-    useEffect(() => {
-        // Find the first video or image in the project's media files
-        const firstMedia = project.mediaFiles?.find(
-            (m: MediaFile) => m.type === 'video' || m.type === 'image'
-        );
-
-        if (firstMedia?.src) {
-            if (firstMedia.type === 'image') {
-                setThumbnailUrl(firstMedia.src);
-                setIsLoading(false);
-            } else if (firstMedia.type === 'video') {
-                // For videos, create a thumbnail from the first frame
-                const video = document.createElement('video');
-                video.crossOrigin = 'anonymous';
-                video.preload = 'metadata';
-                video.src = firstMedia.src;
-                
-                video.onloadeddata = () => {
-                    video.currentTime = 0.1; // Seek to 0.1s for the first frame
-                };
-
-                video.onseeked = () => {
-                    try {
-                        const canvas = document.createElement('canvas');
-                        canvas.width = video.videoWidth || 320;
-                        canvas.height = video.videoHeight || 180;
-                        const ctx = canvas.getContext('2d');
-                        if (ctx) {
-                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                            setThumbnailUrl(canvas.toDataURL('image/jpeg', 0.8));
-                        }
-                    } catch (e) {
-                        console.error('Error generating thumbnail:', e);
-                    }
-                    setIsLoading(false);
-                };
-
-                video.onerror = () => {
-                    setIsLoading(false);
-                };
-            }
-        } else {
-            setIsLoading(false);
-        }
-    }, [project.mediaFiles]);
-
-    // Count assets
-    const videoCount = project.mediaFiles?.filter((m: MediaFile) => m.type === 'video').length || 0;
-    const imageCount = project.mediaFiles?.filter((m: MediaFile) => m.type === 'image').length || 0;
-    const audioCount = project.mediaFiles?.filter((m: MediaFile) => m.type === 'audio').length || 0;
-    const textCount = project.textElements?.length || 0;
-
-    return (
-        <div className="relative aspect-video w-full bg-slate-800/50 rounded-xl overflow-hidden group">
-            {isLoading ? (
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 className="w-8 h-8 text-slate-500 animate-spin" />
-                </div>
-            ) : thumbnailUrl ? (
-                <>
-                    <img 
-                        src={thumbnailUrl} 
-                        alt={project.projectName}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                </>
-            ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-slate-800 to-slate-900">
-                    <Film className="w-12 h-12 text-slate-600 mb-2" />
-                    <span className="text-sm text-slate-500">No preview</span>
-                </div>
-            )}
-            
-            {/* Play overlay */}
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border border-white/30">
-                    <Play className="w-6 h-6 text-white ml-1" fill="white" />
-                </div>
-            </div>
-
-            {/* Asset counts badge */}
-            {(videoCount > 0 || imageCount > 0 || audioCount > 0 || textCount > 0) && (
-                <div className="absolute bottom-3 left-3 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                    {videoCount > 0 && (
-                        <div className="flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-md text-xs text-white">
-                            <Film className="w-3 h-3" />
-                            {videoCount}
-                        </div>
-                    )}
-                    {imageCount > 0 && (
-                        <div className="flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-md text-xs text-white">
-                            <ImageIcon className="w-3 h-3" />
-                            {imageCount}
-                        </div>
-                    )}
-                    {audioCount > 0 && (
-                        <div className="flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-md text-xs text-white">
-                            <Music className="w-3 h-3" />
-                            {audioCount}
-                        </div>
-                    )}
-                    {textCount > 0 && (
-                        <div className="flex items-center gap-1 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-md text-xs text-white">
-                            <Type className="w-3 h-3" />
-                            {textCount}
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {/* Duration badge */}
-            {project.duration > 0 && (
-                <div className="absolute bottom-3 right-3 px-2 py-1 bg-black/60 backdrop-blur-sm rounded-md text-xs text-white font-medium">
-                    {formatDuration(project.duration)}
-                </div>
-            )}
-        </div>
-    );
-}
 
 function formatDuration(seconds: number): string {
     const mins = Math.floor(seconds / 60);
@@ -194,6 +67,15 @@ export default function Page() {
     const [pasteUrl, setPasteUrl] = useState('');
     const [isCreatingFromLink, setIsCreatingFromLink] = useState(false);
     const { user } = useAuth();
+    
+    // Edit title state
+    const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
+    const [editedTitle, setEditedTitle] = useState('');
+    const editInputRef = useRef<HTMLInputElement>(null);
+
+    // AI Tools Modal state
+    const [isAIModalOpen, setIsAIModalOpen] = useState(false);
+    const [selectedProjectForAI, setSelectedProjectForAI] = useState<ProjectState | null>(null);
 
     const previousUserIdRef = useRef<string | null>(null);
 
@@ -319,92 +201,105 @@ export default function Page() {
         }
     };
 
-    const handleCreateFromLink = async () => {
-        if (!pasteUrl.trim()) return;
+    const handleOpenAIModal = (project?: ProjectState) => {
+        setSelectedProjectForAI(project || null);
+        setIsAIModalOpen(true);
+    };
 
+    const handleAIToolSelect = async (tool: AIToolType, url: string, projectId?: string) => {
         if (!user) {
-            toast.error('You must be logged in to create a project');
+            toast.error('You must be logged in to use AI tools');
             return;
         }
 
-        // Validate URL format
-        const urlPattern = /^(https?:\/\/)?(www\.)?(tiktok\.com|vm\.tiktok\.com|instagram\.com|instagr\.am|youtube\.com|youtu\.be)/i;
-        if (!urlPattern.test(pasteUrl.trim())) {
-            toast.error('Please enter a valid TikTok, Instagram, or YouTube URL');
+        // Audio beats is coming soon
+        if (tool === 'audio-beats') {
+            toast('Audio Beat Sync is coming soon! 🎵', { icon: '🚀' });
             return;
         }
 
         setIsCreatingFromLink(true);
 
         // Generate project name from URL
-        let projectName = 'AI Generated Project';
+        let projectName = 'AI Video Remix';
         try {
-            const url = new URL(pasteUrl.includes('://') ? pasteUrl : `https://${pasteUrl}`);
-            const hostname = url.hostname.replace('www.', '');
-            if (hostname.includes('tiktok')) {
-                projectName = 'TikTok Remix';
-            } else if (hostname.includes('instagram')) {
+            const parsedUrl = new URL(url.includes('://') ? url : `https://${url}`);
+            const hostname = parsedUrl.hostname.replace('www.', '');
+            if (hostname.includes('instagram')) {
                 projectName = 'Instagram Remix';
-            } else if (hostname.includes('youtube') || hostname.includes('youtu.be')) {
-                projectName = 'YouTube Remix';
             }
         } catch {
             // Keep default name
         }
 
-        const newProject: ProjectState = {
-            id: crypto.randomUUID(),
-            projectName,
-            createdAt: new Date().toISOString(),
-            lastModified: new Date().toISOString(),
-            mediaFiles: [],
-            textElements: [],
-            currentTime: 0,
-            isPlaying: false,
-            isMuted: false,
-            duration: 0,
-            activeSection: 'AI',
-            activeElement: 'AI',
-            activeElementIndex: 0,
-            filesID: [],
-            zoomLevel: 1,
-            timelineZoom: 100,
-            enableMarkerTracking: true,
-            resolution: { width: 1080, height: 1920 },
-            fps: 30,
-            aspectRatio: '9:16',
-            history: [],
-            future: [],
-            exportSettings: {
-                resolution: '1080p',
-                quality: 'high',
-                speed: 'fastest',
-                fps: 30,
-                format: 'mp4',
-                includeSubtitles: false,
-            },
-        };
-
         try {
-            const savedId = await saveProjectToSupabase(newProject, user.id);
+            let targetProject: ProjectState;
             
-            if (!savedId) {
-                toast.error('Failed to create project in database');
-                setIsCreatingFromLink(false);
-                return;
-            }
+            // Use existing project or create new one
+            if (projectId) {
+                const existingProject = projects.find(p => p.id === projectId);
+                if (!existingProject) {
+                    toast.error('Project not found');
+                    setIsCreatingFromLink(false);
+                    return;
+                }
+                targetProject = existingProject;
+            } else {
+                // Create new project
+                targetProject = {
+                    id: crypto.randomUUID(),
+                    projectName,
+                    createdAt: new Date().toISOString(),
+                    lastModified: new Date().toISOString(),
+                    mediaFiles: [],
+                    textElements: [],
+                    currentTime: 0,
+                    isPlaying: false,
+                    isMuted: false,
+                    duration: 0,
+                    activeSection: 'AI',
+                    activeElement: 'AI',
+                    activeElementIndex: 0,
+                    filesID: [],
+                    zoomLevel: 1,
+                    timelineZoom: 100,
+                    enableMarkerTracking: true,
+                    resolution: { width: 1080, height: 1920 },
+                    fps: 30,
+                    aspectRatio: '9:16',
+                    history: [],
+                    future: [],
+                    exportSettings: {
+                        resolution: '1080p',
+                        quality: 'high',
+                        speed: 'fastest',
+                        fps: 30,
+                        format: 'mp4',
+                        includeSubtitles: false,
+                    },
+                };
 
-            await storeProject(newProject);
-            dispatch(addProject(newProject));
-            dispatch(setCurrentProject(newProject.id));
+                const savedId = await saveProjectToSupabase(targetProject, user.id);
+                
+                if (!savedId) {
+                    toast.error('Failed to create project in database');
+                    setIsCreatingFromLink(false);
+                    return;
+                }
+
+                await storeProject(targetProject);
+                dispatch(addProject(targetProject));
+            }
+            
+            dispatch(setCurrentProject(targetProject.id));
             
             // Navigate to project with auto-analyze URL parameter
-            const encodedUrl = encodeURIComponent(pasteUrl.trim());
-            router.push(`/projects/${newProject.id}?autoAnalyze=${encodedUrl}`);
+            const encodedUrl = encodeURIComponent(url);
+            router.push(`/projects/${targetProject.id}?autoAnalyze=${encodedUrl}`);
             
             setPasteUrl('');
         } catch (error) {
-            console.error('Error creating project from link:', error);
+            console.error('Error creating project with AI:', error);
             toast.error('Failed to create project');
             setIsCreatingFromLink(false);
         }
@@ -456,6 +351,56 @@ export default function Page() {
         }
     };
 
+    const handleStartEditTitle = (e: React.MouseEvent, project: ProjectState) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setEditingProjectId(project.id);
+        setEditedTitle(project.projectName);
+        setTimeout(() => editInputRef.current?.focus(), 0);
+    };
+
+    const handleSaveTitle = async (e: React.MouseEvent | React.KeyboardEvent, projectId: string) => {
+        e.stopPropagation();
+        e.preventDefault();
+        
+        if (!editedTitle.trim()) {
+            setEditingProjectId(null);
+            return;
+        }
+
+        const project = projects.find(p => p.id === projectId);
+        if (!project) {
+            setEditingProjectId(null);
+            return;
+        }
+
+        const updatedProject: ProjectState = {
+            ...project,
+            projectName: editedTitle.trim(),
+            lastModified: new Date().toISOString(),
+        };
+
+        try {
+            await storeProject(updatedProject);
+            if (user) {
+                await saveProjectToSupabase(updatedProject, user.id);
+            }
+            dispatch(updateProject(updatedProject));
+            toast.success('Project renamed');
+        } catch (error) {
+            console.error('Error updating project title:', error);
+            toast.error('Failed to rename project');
+        }
+
+        setEditingProjectId(null);
+    };
+
+    const handleCancelEdit = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setEditingProjectId(null);
+    };
+
     const sortedProjects = [...projects].sort(
         (a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime()
     );
@@ -464,19 +409,19 @@ export default function Page() {
         <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
             {/* Background effects */}
             <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-purple-900/10 via-transparent to-transparent pointer-events-none" />
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[300px] bg-purple-600/5 blur-[120px] rounded-full pointer-events-none" />
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[400px] sm:w-[600px] lg:w-[800px] h-[200px] sm:h-[250px] lg:h-[300px] bg-purple-600/5 blur-[120px] rounded-full pointer-events-none" />
             
-            <div className="relative max-w-5xl mx-auto px-4 py-12">
+            <div className="relative max-w-5xl mx-auto px-3 sm:px-4 py-6 sm:py-8 lg:py-12">
                 {/* Header */}
-                <div className="text-center mb-10">
-                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-purple-500/10 border border-purple-500/20 mb-6">
-                        <FolderOpen className="w-4 h-4 text-purple-400" />
-                        <span className="text-sm font-medium text-purple-300">Your Workspace</span>
+                <div className="text-center mb-6 sm:mb-8 lg:mb-10">
+                    <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-full bg-purple-500/10 border border-purple-500/20 mb-4 sm:mb-6">
+                        <FolderOpen className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-purple-400" />
+                        <span className="text-xs sm:text-sm font-medium text-purple-300">Your Workspace</span>
                     </div>
-                    <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+                    <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold text-white mb-3 sm:mb-4">
                         My <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">Projects</span>
                     </h1>
-                    <p className="text-lg text-slate-400 max-w-xl mx-auto">
+                    <p className="text-base sm:text-lg text-slate-400 max-w-xl mx-auto px-2">
                         Create, edit and manage your video projects
                     </p>
                 </div>
@@ -488,195 +433,208 @@ export default function Page() {
                     </div>
                 ) : (
                     <>
-                        {/* AI Quick Start - Paste Link */}
-                        <div className="mb-6 group relative">
+                        {/* AI Quick Start - Opens Modal */}
+                        <button 
+                            onClick={() => handleOpenAIModal()}
+                            className="w-full mb-4 sm:mb-6 group relative text-left"
+                            disabled={isCreatingFromLink}
+                        >
                             {/* Animated gradient border */}
-                            <div className="absolute -inset-[1px] bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-500 rounded-2xl opacity-70 blur-[2px] group-hover:opacity-100 transition-opacity duration-500" 
+                            <div className="absolute -inset-[1px] bg-gradient-to-r from-purple-500 via-pink-500 to-cyan-500 rounded-xl sm:rounded-2xl opacity-70 blur-[2px] group-hover:opacity-100 transition-opacity duration-500" 
                                 style={{ 
                                     backgroundSize: '200% 200%',
                                     animation: 'gradient-x 3s ease infinite'
                                 }} 
                             />
-                            <div className="relative bg-gradient-to-r from-slate-900 via-slate-900 to-purple-950/30 backdrop-blur border border-transparent rounded-2xl p-6 overflow-hidden">
+                            <div className="relative bg-gradient-to-r from-slate-900 via-slate-900 to-purple-950/30 backdrop-blur border border-transparent rounded-xl sm:rounded-2xl p-4 sm:p-6 overflow-hidden">
                                 {/* Background effects */}
                                 <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                                    <div className="absolute top-4 right-8 opacity-30 group-hover:opacity-60 transition-opacity">
+                                    <div className="absolute top-4 right-8 opacity-30 group-hover:opacity-60 transition-opacity hidden sm:block">
                                         <Sparkles className="w-4 h-4 text-purple-400 animate-pulse" />
                                     </div>
-                                    <div className="absolute top-12 right-16 opacity-20 group-hover:opacity-50 transition-opacity" style={{ animationDelay: '0.5s' }}>
+                                    <div className="absolute top-12 right-16 opacity-20 group-hover:opacity-50 transition-opacity hidden sm:block" style={{ animationDelay: '0.5s' }}>
                                         <Sparkles className="w-3 h-3 text-pink-400 animate-pulse" />
                                     </div>
                                     <div className="absolute -top-20 -right-20 w-40 h-40 bg-purple-500/10 rounded-full blur-3xl group-hover:bg-purple-500/20 transition-all" />
                                 </div>
 
-                                <div className="relative flex flex-col md:flex-row md:items-center gap-4">
-                                    <div className="flex items-center gap-4 flex-shrink-0">
+                                <div className="relative flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                                    <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
                                         <div className="relative">
-                                            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-purple-500 via-pink-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-purple-500/30">
-                                                <Wand2 className="w-7 h-7 text-white" />
+                                            <div className="w-11 sm:w-14 h-11 sm:h-14 rounded-xl bg-gradient-to-br from-purple-500 via-pink-500 to-cyan-500 flex items-center justify-center shadow-lg shadow-purple-500/30 group-hover:scale-105 transition-transform">
+                                                <Wand2 className="w-5 sm:w-7 h-5 sm:h-7 text-white" />
                                             </div>
                                             <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center animate-pulse">
                                                 <span className="text-[8px] font-bold text-yellow-900">AI</span>
                                             </div>
                                         </div>
-                                        <div className="text-left">
-                                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                        <div className="text-left flex-1">
+                                            <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
                                                 <span className="bg-gradient-to-r from-purple-300 via-pink-300 to-cyan-300 bg-clip-text text-transparent">
                                                     Quick Start with AI
                                                 </span>
                                             </h3>
-                                            <p className="text-sm text-slate-400">Paste a link and let AI analyze it instantly</p>
+                                            <p className="text-xs sm:text-sm text-slate-400">Copy viral videos or create beat-synced edits</p>
                                         </div>
+                                        <ArrowRight className="w-5 h-5 text-slate-400 sm:hidden group-hover:translate-x-1 transition-transform" />
                                     </div>
 
-                                    <div className="flex-1 flex gap-3">
-                                        <div className="flex-1 relative group/input">
-                                            <div className="absolute -inset-[1px] bg-gradient-to-r from-purple-500/50 to-pink-500/50 rounded-xl opacity-0 group-focus-within/input:opacity-100 blur-sm transition-opacity" />
-                                            <div className="relative flex items-center">
-                                                <Link className="absolute left-4 w-4 h-4 text-slate-500" />
-                                                <input
-                                                    type="text"
-                                                    value={pasteUrl}
-                                                    onChange={(e) => setPasteUrl(e.target.value)}
-                                                    placeholder="Paste TikTok, Instagram, or YouTube URL..."
-                                                    disabled={isCreatingFromLink}
-                                                    onKeyDown={(e) => {
-                                                        if (e.key === "Enter" && !isCreatingFromLink && pasteUrl.trim()) {
-                                                            handleCreateFromLink();
-                                                        }
-                                                    }}
-                                                    className="w-full pl-11 pr-4 py-3.5 text-sm bg-slate-800/80 border border-slate-700/50 rounded-xl text-slate-200 placeholder-slate-500 focus:outline-none focus:border-purple-500/50 focus:bg-slate-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                                />
+                                    <div className="flex-1 hidden sm:flex justify-end">
+                                        <div className="flex items-center gap-2 px-3 lg:px-5 py-2 lg:py-3 bg-gradient-to-r from-purple-600/20 to-pink-600/20 border border-purple-500/30 rounded-xl group-hover:border-purple-500/50 transition-all">
+                                            <div className="flex items-center gap-1.5 lg:gap-2">
+                                                <Video className="w-4 h-4 text-purple-400" />
+                                                <span className="text-xs lg:text-sm text-purple-300">Video Reference</span>
                                             </div>
+                                            <span className="text-slate-600 mx-1 hidden lg:inline">|</span>
+                                            <div className="hidden lg:flex items-center gap-2">
+                                                <AudioWaveform className="w-4 h-4 text-cyan-400" />
+                                                <span className="text-sm text-cyan-300">Beat Sync</span>
+                                                <span className="text-[9px] px-1.5 py-0.5 bg-cyan-500/20 rounded text-cyan-400 font-medium">Soon</span>
+                                            </div>
+                                            <ArrowRight className="w-4 h-4 text-slate-400 ml-2 group-hover:translate-x-1 transition-transform" />
                                         </div>
-                                        <button
-                                            onClick={handleCreateFromLink}
-                                            disabled={isCreatingFromLink || !pasteUrl.trim()}
-                                            className="relative px-6 py-3.5 bg-gradient-to-r from-purple-600 via-pink-600 to-cyan-600 hover:from-purple-500 hover:via-pink-500 hover:to-cyan-500 text-white text-sm font-bold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 hover:scale-[1.02] active:scale-[0.98]"
-                                        >
-                                            {isCreatingFromLink ? (
-                                                <>
-                                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                                    Creating...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Sparkles className="w-4 h-4" />
-                                                    Analyze
-                                                    <ArrowRight className="w-4 h-4" />
-                                                </>
-                                            )}
-                                        </button>
                                     </div>
                                 </div>
 
-                                {/* Platform badges */}
-                                <div className="relative flex items-center justify-center gap-4 mt-4 pt-4 border-t border-slate-800/50">
+                                {/* Platform badges - Hidden on mobile */}
+                                <div className="relative hidden sm:flex items-center justify-center gap-4 mt-4 pt-4 border-t border-slate-800/50">
                                     <span className="text-xs text-slate-500">Works with:</span>
-                                    {['TikTok', 'Instagram', 'YouTube'].map((platform) => (
-                                        <span key={platform} className="text-xs text-slate-400 font-medium px-2 py-1 bg-slate-800/50 rounded-md">
-                                            {platform}
+                                    <span className="text-xs text-slate-400 font-medium px-2 py-1 bg-slate-800/50 rounded-md">
+                                            Instagram
                                         </span>
-                                    ))}
                                 </div>
                             </div>
-                        </div>
+                        </button>
 
                         {/* Create New Project Card */}
                         <button 
                             onClick={() => setIsCreating(true)}
-                            className="w-full mb-6 group"
+                            className="w-full mb-4 sm:mb-6 group"
                         >
-                            <div className="flex items-center gap-6 p-6 bg-gradient-to-r from-slate-900/50 to-slate-900/30 backdrop-blur border border-slate-700/30 rounded-2xl hover:border-slate-600/50 transition-all duration-300 hover:shadow-lg hover:shadow-slate-500/5">
-                                <div className="flex-shrink-0 w-16 h-16 rounded-xl bg-slate-800 flex items-center justify-center group-hover:scale-105 transition-transform duration-300">
-                                    <Plus className="w-8 h-8 text-slate-400" />
+                            <div className="flex items-center gap-4 sm:gap-6 p-4 sm:p-6 bg-gradient-to-r from-slate-900/50 to-slate-900/30 backdrop-blur border border-slate-700/30 rounded-xl sm:rounded-2xl hover:border-slate-600/50 transition-all duration-300 hover:shadow-lg hover:shadow-slate-500/5">
+                                <div className="flex-shrink-0 w-12 sm:w-16 h-12 sm:h-16 rounded-xl bg-slate-800 flex items-center justify-center group-hover:scale-105 transition-transform duration-300">
+                                    <Plus className="w-6 sm:w-8 h-6 sm:h-8 text-slate-400" />
                                 </div>
-                                <div className="text-left">
-                                    <h3 className="text-xl font-semibold text-white mb-1 flex items-center gap-2">
+                                <div className="text-left flex-1 min-w-0">
+                                    <h3 className="text-lg sm:text-xl font-semibold text-white mb-0.5 sm:mb-1 flex items-center gap-2">
                                         Create Blank Project
                                     </h3>
-                                    <p className="text-slate-400">Start from scratch with a fresh canvas</p>
+                                    <p className="text-sm sm:text-base text-slate-400">Start from scratch with a fresh canvas</p>
                                 </div>
                             </div>
                         </button>
 
                         {/* Projects List */}
                         {sortedProjects.length === 0 ? (
-                            <div className="text-center py-16">
-                                <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-slate-800/50 flex items-center justify-center">
-                                    <Film className="w-10 h-10 text-slate-600" />
+                            <div className="text-center py-10 sm:py-16">
+                                <div className="w-16 sm:w-20 h-16 sm:h-20 mx-auto mb-4 sm:mb-6 rounded-full bg-slate-800/50 flex items-center justify-center">
+                                    <Film className="w-8 sm:w-10 h-8 sm:h-10 text-slate-600" />
                                 </div>
-                                <h3 className="text-xl font-medium text-white mb-2">No projects yet</h3>
-                                <p className="text-slate-400 mb-6">Create your first project to get started</p>
+                                <h3 className="text-lg sm:text-xl font-medium text-white mb-2">No projects yet</h3>
+                                <p className="text-sm sm:text-base text-slate-400 mb-6">Create your first project to get started</p>
                             </div>
                         ) : (
-                            <div className="space-y-4">
-{sortedProjects.map((project) => (
-                                                    <NextLink 
-                                                        key={project.id}
-                                                        href={`/projects/${project.id}`}
-                                                        onClick={() => dispatch(setCurrentProject(project.id))}
-                                                        className="block group"
-                                                    >
-                                        <div className="flex flex-col md:flex-row gap-5 p-5 bg-slate-900/50 backdrop-blur border border-slate-800 rounded-2xl hover:border-slate-700 hover:bg-slate-900/70 transition-all duration-300">
-                                            {/* Thumbnail */}
-                                            <div className="w-full md:w-72 flex-shrink-0">
-                                                <ProjectThumbnail project={project} />
-                                            </div>
-                                            
-                                            {/* Project Info */}
-                                            <div className="flex-1 flex flex-col justify-between py-1">
-                                                <div>
-                                                    <h3 className="text-xl font-semibold text-white mb-2 group-hover:text-purple-300 transition-colors">
-                                                        {project.projectName}
-                                                    </h3>
-                                                    <div className="flex flex-wrap gap-4 text-sm text-slate-400">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <Calendar className="w-4 h-4" />
-                                                            <span>Created {formatDate(project.createdAt)}</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <Clock className="w-4 h-4" />
-                                                            <span>Modified {formatDate(project.lastModified)}</span>
-                                                        </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+                                {sortedProjects.map((project) => (
+                                    <div key={project.id} className="group">
+                                        <NextLink 
+                                            href={`/projects/${project.id}`}
+                                            onClick={(e) => {
+                                                if (editingProjectId === project.id) {
+                                                    e.preventDefault();
+                                                    return;
+                                                }
+                                                dispatch(setCurrentProject(project.id));
+                                            }}
+                                            className="block h-full"
+                                        >
+                                            <div className="flex flex-col h-full p-3 sm:p-4 bg-slate-900/50 backdrop-blur border border-slate-800 rounded-xl sm:rounded-2xl hover:border-slate-700 hover:bg-slate-900/70 transition-all duration-300 active:scale-[0.98]">
+                                                {/* Header with icon and actions */}
+                                                <div className="flex items-start justify-between mb-2 sm:mb-3">
+                                                    <div className="flex-shrink-0 w-10 sm:w-11 h-10 sm:h-11 rounded-xl bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-500/20 flex items-center justify-center">
+                                                        <Film className="w-4 sm:w-5 h-4 sm:h-5 text-purple-400" />
                                                     </div>
-                                                </div>
-                                                
-                                                {/* Project stats */}
-                                                <div className="flex items-center justify-between mt-4">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="px-3 py-1.5 bg-slate-800 rounded-lg text-xs font-medium text-slate-300">
-                                                            {project.aspectRatio || '9:16'}
-                                                        </span>
-                                                        <span className="px-3 py-1.5 bg-slate-800 rounded-lg text-xs font-medium text-slate-300">
-                                                            {project.fps || 30} FPS
-                                                        </span>
+                                                    <div className="flex items-center gap-1">
                                                         {project.duration > 0 && (
-                                                            <span className="px-3 py-1.5 bg-slate-800 rounded-lg text-xs font-medium text-slate-300">
+                                                            <span className="px-1.5 sm:px-2 py-0.5 sm:py-1 bg-slate-800 rounded-lg text-[10px] sm:text-xs font-medium text-slate-300">
                                                                 {formatDuration(project.duration)}
                                                             </span>
                                                         )}
+                                                        <button
+                                                            onClick={(e) => handleDeleteProject(e, project.id)}
+                                                            disabled={deletingId === project.id}
+                                                            className="p-1.5 sm:p-2 rounded-lg bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-all duration-200 sm:opacity-0 sm:group-hover:opacity-100"
+                                                            aria-label="Delete project"
+                                                        >
+                                                            {deletingId === project.id ? (
+                                                                <Loader2 className="w-3.5 sm:w-4 h-3.5 sm:h-4 animate-spin" />
+                                                            ) : (
+                                                                <Trash2 className="w-3.5 sm:w-4 h-3.5 sm:h-4" />
+                                                            )}
+                                                        </button>
                                                     </div>
-                                                    
-                                                    {/* Delete button */}
-                                                    <button
-                                                        onClick={(e) => handleDeleteProject(e, project.id)}
-                                                        disabled={deletingId === project.id}
-                                                        className="p-2.5 rounded-xl bg-slate-800 hover:bg-red-500/20 text-slate-400 hover:text-red-400 transition-all duration-200 opacity-0 group-hover:opacity-100"
-                                                        aria-label="Delete project"
-                                                    >
-                                                        {deletingId === project.id ? (
-                                                            <Loader2 className="w-5 h-5 animate-spin" />
-                                                        ) : (
-                                                            <Trash2 className="w-5 h-5" />
-                                                        )}
-                                                    </button>
                                                 </div>
-                                                </div>
+                                                
+                                                {/* Project Title */}
+                                                <div className="flex-1">
+                                                    {editingProjectId === project.id ? (
+                                                        <div className="flex items-center gap-2" onClick={(e) => e.preventDefault()}>
+                                                            <input
+                                                                ref={editInputRef}
+                                                                type="text"
+                                                                value={editedTitle}
+                                                                onChange={(e) => setEditedTitle(e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        handleSaveTitle(e, project.id);
+                                                                    } else if (e.key === 'Escape') {
+                                                                        setEditingProjectId(null);
+                                                                    }
+                                                                }}
+                                                                className="flex-1 px-2 py-1 bg-slate-800 border border-purple-500 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm font-semibold"
+                                                                onClick={(e) => e.stopPropagation()}
+                                                            />
+                                                            <button
+                                                                onClick={(e) => handleSaveTitle(e, project.id)}
+                                                                className="p-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white transition-colors"
+                                                            >
+                                                                <Check className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <button
+                                                                onClick={handleCancelEdit}
+                                                                className="p-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white transition-colors"
+                                                            >
+                                                                <X className="w-3.5 h-3.5" />
+                                                            </button>
                                                         </div>
-                                                    </NextLink>
-                                                ))}
+                                                    ) : (
+                                                        <div className="flex items-center gap-1.5">
+                                                            <h3 className="text-sm sm:text-base font-semibold text-white group-hover:text-purple-300 transition-colors truncate">
+                                                                {project.projectName}
+                                                            </h3>
+                                                            <button
+                                                                onClick={(e) => handleStartEditTitle(e, project)}
+                                                                className="p-1 rounded-lg hover:bg-slate-700 text-slate-500 hover:text-purple-400 transition-all sm:opacity-0 sm:group-hover:opacity-100 flex-shrink-0"
+                                                                aria-label="Edit project name"
+                                                            >
+                                                                <Pencil className="w-3 sm:w-3.5 h-3 sm:h-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Date info */}
+                                                <div className="flex items-center gap-3 text-[10px] sm:text-xs text-slate-500 mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-slate-800">
+                                                    <div className="flex items-center gap-1">
+                                                        <Clock className="w-3 h-3" />
+                                                        <span>{formatDate(project.lastModified)}</span>
+                                                    </div>
+                                                </div>
                                             </div>
+                                        </NextLink>
+                                    </div>
+                                ))}
+                            </div>
                         )}
                     </>
                 )}
@@ -684,13 +642,13 @@ export default function Page() {
 
             {/* Create Project Modal */}
             {isCreating && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
                     <div 
-                        className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl"
+                        className="bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 w-full sm:max-w-md shadow-2xl safe-bottom"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <h3 className="text-2xl font-bold text-white mb-2">Create New Project</h3>
-                        <p className="text-slate-400 mb-6">Give your project a memorable name</p>
+                        <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">Create New Project</h3>
+                        <p className="text-sm sm:text-base text-slate-400 mb-4 sm:mb-6">Give your project a memorable name</p>
                         
                         <input
                             type="text"
@@ -705,10 +663,10 @@ export default function Page() {
                                 }
                             }}
                             placeholder="My Awesome Video"
-                            className="w-full px-4 py-3 bg-slate-800 border border-slate-700 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent placeholder:text-slate-500 transition-all"
+                            className="w-full px-4 py-3 bg-slate-800 border border-slate-700 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent placeholder:text-slate-500 transition-all text-base"
                         />
                         
-                        <div className="flex gap-3 mt-6">
+                        <div className="flex gap-3 mt-5 sm:mt-6">
                             <button
                                 onClick={() => setIsCreating(false)}
                                 className="flex-1 px-4 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-colors"
@@ -726,6 +684,22 @@ export default function Page() {
                     </div>
                 </div>
             )}
+
+            {/* AI Tools Modal */}
+            <AIToolsModal
+                isOpen={isAIModalOpen}
+                onClose={() => {
+                    setIsAIModalOpen(false);
+                    setSelectedProjectForAI(null);
+                }}
+                onSelectTool={(tool, url) => handleAIToolSelect(tool, url, selectedProjectForAI?.id)}
+                currentProject={selectedProjectForAI ? {
+                    projectName: selectedProjectForAI.projectName,
+                    mediaFilesCount: selectedProjectForAI.mediaFiles?.length || 0,
+                    textElementsCount: selectedProjectForAI.textElements?.length || 0
+                } : null}
+                isProcessing={isCreatingFromLink}
+            />
         </div>
     );
 }
