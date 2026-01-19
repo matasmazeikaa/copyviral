@@ -11,9 +11,7 @@ import { MediaFile, TextElement } from "@/app/types";
 import LeftSidebar from "../../../components/editor/LeftSidebar";
 import RightSidebar from "../../../components/editor/RightSidebar";
 import VideoLoader from "../../../components/editor/VideoLoader";
-import Image from "next/image";
 import { useAuth } from "../../../contexts/AuthContext";
-import { createClient } from "../../../utils/supabase/client";
 import { addMediaLoading, updateMediaProgress, completeMediaLoading, errorMediaLoading } from "../../../store/slices/loadingSlice";
 import { loadProjectFromSupabase } from "../../../services/projectService";
 import UpgradeModal from "../../../components/UpgradeModal";
@@ -21,7 +19,7 @@ import { toast } from 'react-hot-toast';
 import { DEFAULT_TEXT_STYLE } from "../../../constants";
 import { incrementAIUsage } from "../../../services/subscriptionService";
 import { useAIAnalysis } from "../../../contexts/AIAnalysisContext";
-import { Link, Loader2, Eye, Brain, Zap, Sparkles, X, Settings, Wand2, Play, Pause, Menu } from 'lucide-react';
+import { Link, Eye, Brain, Zap, Sparkles, X, Settings, Play, Pause, Menu, Scissors } from 'lucide-react';
 
 // AI Loading Modal Component for auto-analyze - uses portal for true full-page overlay
 function AILoadingModal({ isOpen, stage }: { isOpen: boolean; stage: 'downloading' | 'analyzing' | 'processing' }) {
@@ -680,7 +678,7 @@ export default function Project({ params }: { params: { id: string } }) {
                             {/* Tools Button */}
                             <button 
                                 onClick={() => setIsMobileLeftOpen(true)}
-                                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
                             >
                                 <Menu className="w-4 h-4" />
                                 <span className="text-xs font-medium">Tools</span>
@@ -689,17 +687,19 @@ export default function Project({ params }: { params: { id: string } }) {
                             {/* Play Button - Center */}
                             <button 
                                 onClick={() => dispatch(setIsPlaying(!isPlaying))}
-                                className="w-12 h-12 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white flex items-center justify-center transition-all shadow-lg shadow-purple-500/30 active:scale-95"
+                                className="w-11 h-11 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white flex items-center justify-center transition-all shadow-lg shadow-purple-500/30 active:scale-95"
                             >
                                 {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
                             </button>
                             
-                            {/* Time Display */}
-                            <div className="flex items-center gap-1 text-slate-400 bg-slate-800/50 px-2.5 py-1.5 rounded-xl">
-                                <span className="text-xs font-mono text-purple-400">{currentTime.toFixed(1)}s</span>
-                                <span className="text-xs text-slate-600">/</span>
-                                <span className="text-xs font-mono text-slate-500">{duration.toFixed(1)}s</span>
-                            </div>
+                            {/* Properties Button */}
+                            <button 
+                                onClick={() => setIsMobileRightOpen(true)}
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                            >
+                                <Settings className="w-4 h-4" />
+                                <span className="text-xs font-medium">Props</span>
+                            </button>
                         </div>
                         
                         {/* Timeline - Compact version */}
