@@ -7,6 +7,7 @@ import { mimeToExt } from "@/app/types";
 import { toast } from "react-hot-toast";
 import FfmpegProgressBar from "./ProgressBar";
 import { volumeToLinear } from "@/app/utils/utils";
+import { useAuth } from "@/app/contexts/AuthContext";
 
 const RENDER_MESSAGES = [
     { text: "Making it viral...", icon: "rocket" },
@@ -29,6 +30,7 @@ interface FileUploaderProps {
 }
 export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMessages }: FileUploaderProps) {
     const { mediaFiles, projectName, exportSettings, duration, textElements } = useAppSelector(state => state.projectState);
+    const { isPremium } = useAuth();
     const totalDuration = duration;
     const videoRef = useRef<HTMLVideoElement>(null);
     const [loaded, setLoaded] = useState(false);
@@ -78,15 +80,22 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
 
         const renderFunction = async () => {
             const params = extractConfigs(exportSettings);
+            
+            // Get canvas dimensions from export settings
+            const canvasWidth = params.width;
+            const canvasHeight = params.height;
 
             try {
                 const filters = [];
                 const overlays = [];
                 const inputs = [];
                 const audioDelays = [];
+                
+                // Determine if we need watermark (free plan users)
+                const needsWatermark = !isPremium;
 
-                // Create base black background
-                filters.push(`color=c=black:size=1080x1920:d=${totalDuration.toFixed(3)}[base]`);
+                // Create base black background with dynamic resolution
+                filters.push(`color=c=black:size=${canvasWidth}x${canvasHeight}:d=${totalDuration.toFixed(3)}[base]`);
                 // Sort videos by zIndex ascending (lowest drawn first)
                 const sortedMediaFiles = [...mediaFiles].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
@@ -195,9 +204,13 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                 if (overlays.length > 0) {
                     for (let i = 0; i < overlays.length; i++) {
                         const { label, start, end, x, y } = overlays[i];
-                        // Only use 'outv' for final overlay if there are no text elements after
+                        // Only use final label for final overlay if there are no text elements after
                         const isLastOverlay = i === overlays.length - 1;
-                        const nextLabel = (isLastOverlay && textElements.length === 0) ? 'outv' : `tmp${i}`;
+                        const isFinalOutput = isLastOverlay && textElements.length === 0;
+                        // Use 'preWatermark' if watermark needed, else 'outv'
+                        const nextLabel = isFinalOutput 
+                            ? (needsWatermark ? 'preWatermark' : 'outv') 
+                            : `tmp${i}`;
                         filters.push(
                             `[${lastLabel}][${label}]overlay=${x}:${y}:enable='between(t\\,${start}\\,${end})'[${nextLabel}]`
                         );
@@ -208,7 +221,9 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                 // If no visual overlays were added, prepare for text or create final output
                 if (overlays.length === 0) {
                     if (textElements.length === 0) {
-                        filters.push(`[base]copy[outv]`);
+                        // No content, just base - apply watermark if needed
+                        filters.push(`[base]copy[${needsWatermark ? 'preWatermark' : 'outv'}]`);
+                        lastLabel = needsWatermark ? 'preWatermark' : 'outv';
                     } else {
                         // Text will be applied, use base as starting point
                         lastLabel = 'base';
@@ -230,8 +245,12 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                         usedFonts.add(fontToUse);
                     });
                     
-                    // Always ensure fallback font is in the list
+                    // Always ensure fallback font is in the list (also needed for watermark)
                     usedFonts.add(fallbackFont);
+                    // Add Inter for watermark if needed
+                    if (needsWatermark) {
+                        usedFonts.add('Inter');
+                    }
                     
                     // Load only fonts that are actually used
                     const loadedFonts = new Set<string>();
@@ -316,10 +335,12 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                                 xExpression = `${text.x}`;
                             }
                             
-                            // Determine label: last line of last text element gets 'outv', others get intermediate labels
+                            // Determine label: last line of last text element gets 'preWatermark' if watermark needed, else 'outv'
                             const isLastTextElement = i === textElements.length - 1;
                             const isLastLine = lineIndex === textLines.length - 1;
-                            const label = (isLastTextElement && isLastLine) ? 'outv' : `text${i}_line${lineIndex}`;
+                            const label = (isLastTextElement && isLastLine) 
+                                ? (needsWatermark ? 'preWatermark' : 'outv') 
+                                : `text${i}_line${lineIndex}`;
                             
                             // Build drawtext filter using textfile instead of text
                             const drawtextFilter = `[${lastLabel}]drawtext=fontfile=font${fontToUse}.ttf:textfile=${textFileName}:x=${xExpression}:y=${lineY}:fontsize=${fontSize}:fontcolor=${color}:enable='between(t\\,${text.positionStart}\\,${text.positionEnd})'[${label}]`;
@@ -328,6 +349,47 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                             lastLabel = label;
                         }
                     }
+                }
+
+                // Add watermark for free plan users
+                if (needsWatermark) {
+                    // Load Inter font for watermark if not already loaded (no text elements case)
+                    if (textElements.length === 0) {
+                        try {
+                            const res = await fetch('/fonts/Inter.ttf');
+                            if (res.ok) {
+                                const fontBuf = await res.arrayBuffer();
+                                await ffmpeg.writeFile('fontInter.ttf', new Uint8Array(fontBuf));
+                            }
+                        } catch (err) {
+                            console.warn('Failed to load Inter font for watermark:', err);
+                        }
+                    }
+                    
+                    // Scale watermark size based on canvas resolution
+                    const watermarkFontSize = Math.round(canvasWidth * 0.052); // ~5.2% of width for bigger text
+                    const iconFontSize = Math.round(watermarkFontSize * 0.85);
+                    const watermarkPaddingX = Math.round(canvasWidth * 0.04);
+                    const watermarkPaddingY = Math.round(canvasHeight * 0.032);
+                    const shadowOffset = Math.max(2, Math.round(watermarkFontSize * 0.07));
+                    const iconGap = Math.round(watermarkFontSize * 0.35);
+                    
+                    // Watermark text with lightning bolt prefix
+                    // Using Unicode lightning bolt (⚡) - falls back gracefully if font doesn't support it
+                    await ffmpeg.writeFile('watermark.txt', 'CopyViral');
+                    
+                    // Lightning bolt icon character
+                    await ffmpeg.writeFile('bolt.txt', String.fromCodePoint(0x26A1));
+                    
+                    // First draw the main text - bigger, bolder watermark
+                    // Position in bottom-right corner with padding
+                    const watermarkFilter = `[preWatermark]drawtext=fontfile=fontInter.ttf:textfile=watermark.txt:x=w-text_w-${watermarkPaddingX}:y=h-text_h-${watermarkPaddingY}:fontsize=${watermarkFontSize}:fontcolor=0xFFFFFF@0.9:shadowcolor=0x000000@0.65:shadowx=${shadowOffset}:shadowy=${shadowOffset}[withText]`;
+                    filters.push(watermarkFilter);
+                    
+                    // Then draw the lightning bolt icon to the left of the text (golden/yellow color)
+                    const boltX = `w-text_w-${watermarkPaddingX}-${iconGap}`;
+                    const boltFilter = `[withText]drawtext=fontfile=fontInter.ttf:textfile=bolt.txt:x=${boltX}:y=h-text_h-${watermarkPaddingY}:fontsize=${iconFontSize}:fontcolor=0xFFD700@0.95:shadowcolor=0x000000@0.5:shadowx=${shadowOffset}:shadowy=${shadowOffset}[outv]`;
+                    filters.push(boltFilter);
                 }
 
                 // Mix all audio tracks

@@ -40,7 +40,7 @@ export default function Ffmpeg() {
     }, []);
 
     return (
-        <div className="flex flex-col justify-center items-center py-2">
+        <div className="flex flex-col justify-center items-center py-2 w-full gap-4">
             <RenderOptions />
             <FfmpegRender loadFunction={loadFFmpegFunction} loadFfmpeg={loadFfmpeg} logMessages={logMessages} ffmpeg={ffmpegRef.current} />
         </div>

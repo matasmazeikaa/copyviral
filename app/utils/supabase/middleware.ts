@@ -45,10 +45,12 @@ export async function updateSession(request: NextRequest) {
   const isWebhookRoute = request.nextUrl.pathname.startsWith('/api/stripe/webhook')
 
   if (!user && !isPublicRoute && !isWebhookRoute) {
-    // no user, redirect to login page with return URL
+    // no user, redirect to login page with return URL (including query string)
     const url = request.nextUrl.clone()
     url.pathname = '/login'
-    url.searchParams.set('redirect', request.nextUrl.pathname)
+    // Preserve the full path including query parameters
+    const fullPath = request.nextUrl.pathname + request.nextUrl.search
+    url.searchParams.set('redirect', fullPath)
     return NextResponse.redirect(url)
   }
 

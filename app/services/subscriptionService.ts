@@ -123,6 +123,7 @@ export const PLANS = {
     limitations: [
       'Limited AI features',
       'Watermark on exports',
+      '720p max resolution',
     ],
   },
   pro: {
@@ -132,7 +133,7 @@ export const PLANS = {
     features: [
       'Unlimited AI generations',
       'Advanced video editing',
-      'Export in 4K',
+      'Export in 1080p Full HD',
       'Priority support',
       'No watermarks',
       '100GB cloud storage',
@@ -140,6 +141,12 @@ export const PLANS = {
     ],
   },
 };
+
+// Export resolution limits
+export const EXPORT_RESOLUTIONS = {
+  free: '720p',
+  pro: '1080p',
+} as const;
 
 /**
  * Format bytes to human readable string

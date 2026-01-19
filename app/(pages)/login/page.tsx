@@ -4,7 +4,8 @@ import { Suspense, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '../../contexts/AuthContext'
 import toast from 'react-hot-toast'
-import { Zap, Sparkles, ArrowRight, Film, Wand2 } from 'lucide-react'
+import { Sparkles, ArrowRight, Film, Wand2 } from 'lucide-react'
+import Logo from '@/app/components/Logo'
 
 function LoginPageContent() {
   const { user, loading, signInWithGoogle } = useAuth()
@@ -60,9 +61,7 @@ function LoginPageContent() {
         {/* Logo & Header */}
         <div className="text-center mb-6 sm:mb-8">
           <div className="flex justify-center mb-4 sm:mb-6">
-            <div className="w-14 sm:w-16 h-14 sm:h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/30">
-              <Zap className="w-7 sm:w-8 h-7 sm:h-8 text-white" fill="white" />
-            </div>
+            <Logo iconOnly height={56} className="sm:scale-110" />
           </div>
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white mb-2 px-2">
             Welcome to <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400">CopyViral</span>

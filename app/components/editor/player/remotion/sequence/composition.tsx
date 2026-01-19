@@ -4,12 +4,15 @@ import { MediaFile, TextElement } from "@/app/types";
 import { useCurrentFrame, useVideoConfig } from 'remotion';
 import React, { use, useCallback, useEffect, useRef, useState } from "react";
 import { setCurrentTime, setMediaFiles } from "@/app/store/slices/projectSlice";
+import { useAuth } from "@/app/contexts/AuthContext";
+import { LogoWatermark } from "@/app/components/Logo";
 
 const fps = 30;
 
 const Composition = () => {
     const projectState = useAppSelector((state) => state.projectState);
     const { mediaFiles, textElements, isPlaying } = projectState;
+    const { isPremium } = useAuth();
     const frame = useCurrentFrame();
     const dispatch = useAppDispatch();
 
@@ -64,6 +67,20 @@ const Composition = () => {
                         </React.Fragment>
                     );
                 })}
+            {/* Watermark for free plan users */}
+            {!isPremium && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        bottom: 60,
+                        right: 40,
+                        pointerEvents: 'none',
+                        zIndex: 9999,
+                    }}
+                >
+                    <LogoWatermark />
+                </div>
+            )}
         </>
     );
 };

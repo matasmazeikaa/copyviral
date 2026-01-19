@@ -2,26 +2,40 @@ import { ExportConfig } from "@/app/types";
 
 // Function to get FFmpeg parameters based on settings
 export const extractConfigs = (config: ExportConfig) => {
-    // Resolution settings
+    // Resolution settings (portrait/vertical format for social media)
     let scale = "";
+    let width = 1080;
+    let height = 1920;
     switch (config.resolution) {
         case "480p":
-            scale = "scale=854:480";
+            width = 480;
+            height = 854;
+            scale = `scale=${width}:${height}`;
             break;
         case "720p":
-            scale = "scale=1280:720";
+            width = 720;
+            height = 1280;
+            scale = `scale=${width}:${height}`;
             break;
         case "1080p":
-            scale = "scale=1920:1080";
+            width = 1080;
+            height = 1920;
+            scale = `scale=${width}:${height}`;
             break;
         case "2K":
-            scale = "scale=2048:1080";
+            width = 1440;
+            height = 2560;
+            scale = `scale=${width}:${height}`;
             break;
         case "4K":
-            scale = "scale=3840:2160";
+            width = 2160;
+            height = 3840;
+            scale = `scale=${width}:${height}`;
             break;
         default:
-            scale = "scale=1920:1080";
+            width = 1080;
+            height = 1920;
+            scale = `scale=${width}:${height}`;
     }
 
     // Quality settings
@@ -79,6 +93,8 @@ export const extractConfigs = (config: ExportConfig) => {
 
     return {
         scale,
+        width,
+        height,
         crf,
         preset,
         videoBitrate,

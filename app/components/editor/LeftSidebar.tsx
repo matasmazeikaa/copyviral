@@ -7,6 +7,7 @@ import { storeFile, getFile } from "@/app/store";
 import { addMediaLoading, updateMediaProgress, completeMediaLoading, errorMediaLoading } from "@/app/store/slices/loadingSlice";
 import { MediaFile, LibraryItem, TextElement, MediaType } from "@/app/types";
 import { FileVideo, Crown, Zap, LayoutGrid, Upload, Library, Sparkles, Music, LogOut, Link as LinkIcon, Loader2, Trash2, Type, ArrowLeft, Wand2, Video, AudioWaveform, ArrowRight } from "lucide-react";
+import Logo from "../Logo";
 import AITools from "./AssetsPanel/tools-section/AITools";
 import MediaList from "./AssetsPanel/tools-section/MediaList";
 import { MediaLibraryModal, AudioLibraryModal } from "./AssetsPanel/LibraryModal";
@@ -831,14 +832,9 @@ export default function LeftSidebar() {
                     </button>
                     <button
                         onClick={handleGoToProjects}
-                        className="flex items-center gap-2 group flex-1 min-w-0"
+                        className="flex items-center gap-2 group flex-1 min-w-0 hover:opacity-90 transition-opacity"
                     >
-                        <div className="w-8 lg:w-9 h-8 lg:h-9 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/25 group-hover:shadow-purple-500/40 transition-shadow shrink-0">
-                            <Zap className="w-4 lg:w-5 h-4 lg:h-5 text-white" fill="white" />
-                        </div>
-                        <span className="text-lg lg:text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 group-hover:from-purple-300 group-hover:to-pink-300 transition-all truncate">
-                            CopyViral
-                        </span>
+                        <Logo className="text-white" />
                     </button>
                     {isPremium && (
                         <span className="px-1.5 py-0.5 bg-gradient-to-r from-yellow-500 to-orange-500 text-white text-[10px] font-bold rounded flex items-center gap-1 shrink-0">

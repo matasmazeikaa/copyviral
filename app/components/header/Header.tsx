@@ -9,11 +9,11 @@ import {
     Sparkles, 
     LogOut, 
     FolderOpen,
-    Zap,
     ChevronRight,
     Menu,
     X
 } from "lucide-react";
+import Logo from "../Logo";
 
 export default function Header() {
     const pathname = usePathname();
@@ -43,13 +43,8 @@ export default function Header() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
                 <div className="flex justify-between items-center">
                     {/* Logo */}
-                    <Link href="/" className="flex items-center gap-2 group">
-                        <div className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/25 group-hover:shadow-purple-500/40 transition-shadow">
-                            <Zap className="w-4 sm:w-5 h-4 sm:h-5 text-white" fill="white" />
-                        </div>
-                        <span className="text-lg sm:text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-300 group-hover:from-purple-300 group-hover:to-pink-300 transition-all">
-                            CopyViral
-                        </span>
+                    <Link href="/" className="flex items-center group hover:opacity-90 transition-opacity">
+                        <Logo className="text-white" />
                     </Link>
 
                     {/* Desktop Navigation */}
