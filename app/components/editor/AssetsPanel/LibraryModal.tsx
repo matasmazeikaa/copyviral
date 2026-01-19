@@ -419,8 +419,11 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
     if (!isOpen || !mounted) return null;
 
     const modalContent = (
-        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm">
-            <div className="bg-[#0f172a] border-t sm:border border-slate-800 rounded-t-xl sm:rounded-xl w-full sm:max-w-4xl max-h-[85vh] sm:max-h-[80vh] flex flex-col safe-bottom">
+        <div 
+            className="fixed inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+            style={{ zIndex: 99999 }}
+        >
+            <div className="bg-[#0f172a] border border-slate-800 rounded-xl w-[calc(100%-32px)] max-w-4xl max-h-[calc(100vh-32px)] sm:max-h-[80vh] flex flex-col m-4">
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-800">
                     <div className="flex items-center gap-2 sm:gap-4 flex-wrap">

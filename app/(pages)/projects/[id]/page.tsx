@@ -647,7 +647,7 @@ export default function Project({ params }: { params: { id: string } }) {
                 {isMobile ? (
                     <div className="flex flex-col h-full bg-slate-950">
                         {/* Mobile Header */}
-                        <div className="flex items-center justify-between px-3 py-2 bg-slate-900/95 backdrop-blur border-b border-slate-800 z-30 safe-top shrink-0">
+                        <div className="flex items-center justify-between px-3 py-2 bg-slate-900/95 backdrop-blur border-b border-slate-800 z-30 shrink-0 pt-2">
                             <button
                                 onClick={() => router.push('/')}
                                 className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
@@ -716,7 +716,7 @@ export default function Project({ params }: { params: { id: string } }) {
                                 />
                                 <div className="fixed inset-y-0 left-0 z-50 w-[85vw] max-w-[320px] animate-slide-in-left">
                                     <div className="h-full flex flex-col bg-slate-950 border-r border-slate-800">
-                                        <div className="flex items-center justify-between p-3 border-b border-slate-800 safe-top bg-slate-900/95 backdrop-blur">
+                                        <div className="flex items-center justify-between p-3 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
                                             <span className="text-sm font-semibold text-white">Assets & Tools</span>
                                             <button
                                                 onClick={() => setIsMobileLeftOpen(false)}
@@ -741,7 +741,7 @@ export default function Project({ params }: { params: { id: string } }) {
                                 />
                                 <div className="fixed inset-y-0 right-0 z-50 w-[85vw] max-w-[320px] animate-slide-in-right">
                                     <div className="h-full flex flex-col bg-slate-950 border-l border-slate-800">
-                                        <div className="flex items-center justify-between p-3 border-b border-slate-800 safe-top bg-slate-900/95 backdrop-blur">
+                                        <div className="flex items-center justify-between p-3 border-b border-slate-800 bg-slate-900/95 backdrop-blur">
                                             <span className="text-sm font-semibold text-white">Properties & Export</span>
                                             <button
                                                 onClick={() => setIsMobileRightOpen(false)}

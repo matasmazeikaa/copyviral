@@ -501,8 +501,11 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
 
             {/* Render Modal - rendered via portal for proper mobile fullscreen */}
             {showModal && mounted && createPortal(
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center z-[9999] p-0 sm:p-4">
-                    <div className="bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl shadow-2xl p-6 w-full sm:max-w-xl relative overflow-hidden safe-bottom">
+                <div 
+                    className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center"
+                    style={{ zIndex: 99999 }}
+                >
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 w-[calc(100%-32px)] max-w-xl max-h-[calc(100vh-32px)] overflow-y-auto relative m-4">
                         {/* Background gradient effect */}
                         <div className="absolute inset-0 bg-gradient-to-br from-purple-900/10 via-transparent to-pink-900/10 pointer-events-none" />
                         

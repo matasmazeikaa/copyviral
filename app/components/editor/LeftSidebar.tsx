@@ -897,10 +897,7 @@ export default function LeftSidebar({ onOpenModal }: LeftSidebarProps = {}) {
                     
                     <div className="grid grid-cols-2 gap-3">
                         <button 
-                            onClick={() => {
-                                onOpenModal?.();
-                                handleOpenLibrary();
-                            }}
+                            onClick={handleOpenLibrary}
                             className="flex flex-col items-center justify-center p-4 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
                         >
                             <Library className="w-6 h-6 mb-2" />
@@ -983,10 +980,7 @@ export default function LeftSidebar({ onOpenModal }: LeftSidebarProps = {}) {
                     {!audioTrack ? (
                         <div className="space-y-2"> 
                             <button 
-                                onClick={() => {
-                                    onOpenModal?.();
-                                    setIsAudioLibraryModalOpen(true);
-                                }}
+                                onClick={() => setIsAudioLibraryModalOpen(true)}
                                 className="flex items-center justify-center w-full h-12 border border-slate-700 rounded-xl bg-slate-800/30 hover:bg-slate-800 transition-all gap-2 group"
                             >
                                 <div className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center group-hover:bg-blue-500/20 group-hover:text-blue-400 transition-colors">
@@ -1017,10 +1011,7 @@ export default function LeftSidebar({ onOpenModal }: LeftSidebarProps = {}) {
                                     <input type="file" accept="audio/*" className="hidden" onChange={handleUploadAudio} />
                                 </label>
                                 <button 
-                                    onClick={() => {
-                                        onOpenModal?.();
-                                        setIsAudioLibraryModalOpen(true);
-                                    }}
+                                    onClick={() => setIsAudioLibraryModalOpen(true)}
                                     className="flex-1 flex items-center justify-center h-9 border border-slate-700 rounded-lg bg-slate-800/30 hover:bg-slate-800 transition-all gap-2 group"
                                 >
                                     <Library className="w-3 h-3 text-slate-400 group-hover:text-slate-200" />
