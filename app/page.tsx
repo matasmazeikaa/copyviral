@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import NextLink from "next/link";
 import { useRouter } from 'next/navigation';
 import { useAppDispatch, useAppSelector } from './store';
@@ -66,7 +67,13 @@ export default function Page() {
     const [deletingId, setDeletingId] = useState<string | null>(null);
     const [pasteUrl, setPasteUrl] = useState('');
     const [isCreatingFromLink, setIsCreatingFromLink] = useState(false);
+    const [mounted, setMounted] = useState(false);
     const { user } = useAuth();
+    
+    // Mount check for portal
+    useEffect(() => {
+        setMounted(true);
+    }, []);
     
     // Edit title state
     const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
@@ -640,9 +647,9 @@ export default function Page() {
                 )}
             </div>
 
-            {/* Create Project Modal */}
-            {isCreating && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+            {/* Create Project Modal - rendered via portal for proper mobile fullscreen */}
+            {isCreating && mounted && createPortal(
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center z-[100] p-0 sm:p-4">
                     <div 
                         className="bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 w-full sm:max-w-md shadow-2xl safe-bottom"
                         onClick={(e) => e.stopPropagation()}
@@ -682,7 +689,8 @@ export default function Page() {
                             </button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             {/* AI Tools Modal */}

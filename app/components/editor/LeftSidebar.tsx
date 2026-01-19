@@ -26,7 +26,11 @@ const DEFAULT_MEDIA_TIME = 2;
 const CANVAS_WIDTH = 1080;
 const CANVAS_HEIGHT = 1920;
 
-export default function LeftSidebar() {
+interface LeftSidebarProps {
+    onOpenModal?: () => void;
+}
+
+export default function LeftSidebar({ onOpenModal }: LeftSidebarProps = {}) {
     const { mediaFiles, filesID, id: projectId, textElements, projectName } = useAppSelector((state) => state.projectState);
     const dispatch = useAppDispatch();
     const router = useRouter();
@@ -867,7 +871,10 @@ export default function LeftSidebar() {
                         </div>
                         {!isPremium && (
                             <button 
-                                onClick={() => setShowUpgradeModal(true)}
+                                onClick={() => {
+                                    onOpenModal?.();
+                                    setShowUpgradeModal(true);
+                                }}
                                 className={`w-full mt-3 py-1.5 text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1 ${
                                     !canUseAI 
                                         ? 'text-white bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 shadow-lg shadow-purple-500/25'
@@ -890,7 +897,10 @@ export default function LeftSidebar() {
                     
                     <div className="grid grid-cols-2 gap-3">
                         <button 
-                            onClick={handleOpenLibrary}
+                            onClick={() => {
+                                onOpenModal?.();
+                                handleOpenLibrary();
+                            }}
                             className="flex flex-col items-center justify-center p-4 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
                         >
                             <Library className="w-6 h-6 mb-2" />
@@ -912,7 +922,10 @@ export default function LeftSidebar() {
                         <Wand2 className="w-4 h-4" /> AI Tools
                     </h2>
                     <button 
-                        onClick={() => setIsAIModalOpen(true)}
+                        onClick={() => {
+                            onOpenModal?.();
+                            setIsAIModalOpen(true);
+                        }}
                         disabled={isAnalyzing}
                         className="w-full group relative text-left"
                     >
@@ -970,7 +983,10 @@ export default function LeftSidebar() {
                     {!audioTrack ? (
                         <div className="space-y-2"> 
                             <button 
-                                onClick={() => setIsAudioLibraryModalOpen(true)}
+                                onClick={() => {
+                                    onOpenModal?.();
+                                    setIsAudioLibraryModalOpen(true);
+                                }}
                                 className="flex items-center justify-center w-full h-12 border border-slate-700 rounded-xl bg-slate-800/30 hover:bg-slate-800 transition-all gap-2 group"
                             >
                                 <div className="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center group-hover:bg-blue-500/20 group-hover:text-blue-400 transition-colors">
@@ -1001,7 +1017,10 @@ export default function LeftSidebar() {
                                     <input type="file" accept="audio/*" className="hidden" onChange={handleUploadAudio} />
                                 </label>
                                 <button 
-                                    onClick={() => setIsAudioLibraryModalOpen(true)}
+                                    onClick={() => {
+                                        onOpenModal?.();
+                                        setIsAudioLibraryModalOpen(true);
+                                    }}
                                     className="flex-1 flex items-center justify-center h-9 border border-slate-700 rounded-lg bg-slate-800/30 hover:bg-slate-800 transition-all gap-2 group"
                                 >
                                     <Library className="w-3 h-3 text-slate-400 group-hover:text-slate-200" />

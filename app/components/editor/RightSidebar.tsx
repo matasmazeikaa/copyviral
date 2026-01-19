@@ -249,40 +249,31 @@ export default function RightSidebar() {
                     );
                 })()}
 
-                {/* Video Scaling - Only show when video/media is selected (not text) */}
-                {activeElement !== 'text' && videoFiles.length > 0 && (
+                {/* Video Scaling - Only show when a video is selected or editing all videos */}
+                {(isVideoSelected || editAllVideos) && (
                     <div>
                         <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
                             Video Scaling (9:16)
                         </h2>
-                        {!isVideoSelected && !editAllVideos && (
-                            <div className="mb-3 p-2 bg-slate-800/50 border border-slate-700 rounded-lg">
-                                <p className="text-[10px] text-slate-400">
-                                    Select a video to edit, or enable &quot;Edit All&quot; in Properties
-                                </p>
-                            </div>
-                        )}
                         <div className="flex gap-2 mb-3">
                             <button
                                 onClick={() => handleVideoScaleChange('fit')}
-                                disabled={!isVideoSelected && !editAllVideos}
                                 className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors ${
                                     videoScale === 'fit'
                                         ? 'bg-blue-600 text-white'
                                         : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                }`}
                                 title="16:9 letterbox with black bars"
                             >
                                 Fit (16:9)
                             </button>
                             <button
                                 onClick={() => handleVideoScaleChange('fill')}
-                                disabled={!isVideoSelected && !editAllVideos}
                                 className={`flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-colors ${
                                     videoScale === 'fill'
                                         ? 'bg-blue-600 text-white'
                                         : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
-                                } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                }`}
                                 title="Fill entire 9:16 canvas"
                             >
                                 Fill
@@ -298,9 +289,8 @@ export default function RightSidebar() {
                                 max="3"
                                 step="0.1"
                                 value={manualScale}
-                                disabled={!isVideoSelected && !editAllVideos}
                                 onChange={(e) => handleManualScaleChange(Number(e.target.value))}
-                                className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                             />
                         </div>
                     </div>

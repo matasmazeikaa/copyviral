@@ -1,6 +1,7 @@
 'use client'
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { getFile, useAppSelector } from "@/app/store";
 import { extractConfigs } from "@/app/utils/extractConfigs";
 import { mimeToExt } from "@/app/types";
@@ -39,6 +40,12 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
     const [isRendering, setIsRendering] = useState(false);
     const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
     const [renderError, setRenderError] = useState<string | null>(null);
+    const [mounted, setMounted] = useState(false);
+    
+    // Mount check for portal
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     // Cycle through render messages
     useEffect(() => {
@@ -492,10 +499,10 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                 <span>{isRendering ? 'Creating...' : 'Create Viral Clip'}</span>
             </button>
 
-            {/* Render Modal */}
-            {showModal && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 max-w-xl w-full relative overflow-hidden">
+            {/* Render Modal - rendered via portal for proper mobile fullscreen */}
+            {showModal && mounted && createPortal(
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center z-[9999] p-0 sm:p-4">
+                    <div className="bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl shadow-2xl p-6 w-full sm:max-w-xl relative overflow-hidden safe-bottom">
                         {/* Background gradient effect */}
                         <div className="absolute inset-0 bg-gradient-to-br from-purple-900/10 via-transparent to-pink-900/10 pointer-events-none" />
                         
@@ -709,7 +716,8 @@ export default function FfmpegRender({ loadFunction, loadFfmpeg, ffmpeg, logMess
                             )}
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
         </>

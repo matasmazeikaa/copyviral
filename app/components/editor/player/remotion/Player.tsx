@@ -7,7 +7,11 @@ import { useDispatch } from "react-redux";
 
 const fps = 30;
 
-export const PreviewPlayer = () => {
+interface PreviewPlayerProps {
+    isMobile?: boolean;
+}
+
+export const PreviewPlayer = ({ isMobile = false }: PreviewPlayerProps) => {
     const projectState = useAppSelector((state) => state.projectState);
     const { duration, currentTime, isPlaying, isMuted } = projectState;
     const playerRef = useRef<PlayerRef>(null);
@@ -28,15 +32,18 @@ export const PreviewPlayer = () => {
             const containerHeight = containerRef.current.clientHeight;
             
             const aspectRatio = 9 / 16; // width / height for vertical video
-            const maxWidth = 350;
+            // On mobile, use more of the available width, on desktop limit to 350
+            const maxWidth = isMobile ? containerWidth * 0.95 : 350;
             
             // Calculate width and height that fit within container
             let width = Math.min(maxWidth, containerWidth);
             let height = width / aspectRatio;
             
             // If height exceeds container, scale down based on height
-            if (height > containerHeight) {
-                height = containerHeight;
+            // On mobile, leave some padding
+            const maxHeight = isMobile ? containerHeight * 0.98 : containerHeight;
+            if (height > maxHeight) {
+                height = maxHeight;
                 width = height * aspectRatio;
             }
             
@@ -52,7 +59,7 @@ export const PreviewPlayer = () => {
         }
         
         return () => resizeObserver.disconnect();
-    }, []);
+    }, [isMobile]);
     
     useEffect(() => {
         // Only seek if the time changed externally (not from the player itself)
@@ -115,7 +122,7 @@ export const PreviewPlayer = () => {
     return (
         <div 
             ref={containerRef}
-            className="flex items-center justify-center w-full h-full p-2 sm:p-4 overflow-hidden"
+            className={`flex items-center justify-center w-full h-full overflow-hidden ${isMobile ? 'p-1' : 'p-4'}`}
         >
             {/* Player sized to fit within container while maintaining 9:16 aspect ratio */}
             {playerSize.width > 0 && playerSize.height > 0 && (
@@ -124,6 +131,7 @@ export const PreviewPlayer = () => {
                         width: playerSize.width,
                         height: playerSize.height
                     }}
+                    className={isMobile ? 'rounded-lg overflow-hidden shadow-2xl' : ''}
                 >
                     <Player
                         ref={playerRef}
@@ -137,7 +145,7 @@ export const PreviewPlayer = () => {
                             width: "100%", 
                             height: "100%"
                         }}
-                        controls
+                        controls={!isMobile}
                         clickToPlay={false}
                     />
                 </div>

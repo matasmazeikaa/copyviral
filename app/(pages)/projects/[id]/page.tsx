@@ -3,7 +3,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { getFile, getFileWithFallback, storeProject, storeFile, useAppDispatch, useAppSelector } from "../../../store";
 import { getProject } from "../../../store";
 import { setCurrentProject, updateProject } from "../../../store/slices/projectsSlice";
-import { rehydrate, setMediaFiles, setTextElements, setFilesID, setActiveSection } from '../../../store/slices/projectSlice';
+import { rehydrate, setMediaFiles, setTextElements, setFilesID, setActiveSection, setIsPlaying } from '../../../store/slices/projectSlice';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Timeline } from "../../../components/editor/timeline/Timline";
 import { PreviewPlayer } from "../../../components/editor/player/remotion/Player";
@@ -21,7 +21,7 @@ import { toast } from 'react-hot-toast';
 import { DEFAULT_TEXT_STYLE } from "../../../constants";
 import { incrementAIUsage } from "../../../services/subscriptionService";
 import { useAIAnalysis } from "../../../contexts/AIAnalysisContext";
-import { Link, Loader2, Eye, Scissors, Brain, Zap, Sparkles, Menu, X, Layers, Settings, ChevronUp, ChevronDown } from 'lucide-react';
+import { Link, Loader2, Eye, Brain, Zap, Sparkles, X, Settings, Wand2, Play, Pause, Menu } from 'lucide-react';
 
 // AI Loading Modal Component for auto-analyze - uses portal for true full-page overlay
 function AILoadingModal({ isOpen, stage }: { isOpen: boolean; stage: 'downloading' | 'analyzing' | 'processing' }) {
@@ -208,7 +208,7 @@ export default function Project({ params }: { params: { id: string } }) {
     const { currentProjectId } = useAppSelector((state) => state.projects);
     const [isLoading, setIsLoading] = useState(true);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-    const { currentTime, duration, fps, filesID, textElements } = useAppSelector((state) => state.projectState);
+    const { currentTime, duration, fps, filesID, textElements, isPlaying } = useAppSelector((state) => state.projectState);
     const { user, usageInfo, canUseAI, refreshUsage } = useAuth();
 
     const router = useRouter();
@@ -233,7 +233,6 @@ export default function Project({ params }: { params: { id: string } }) {
     // Mobile state management
     const [isMobileLeftOpen, setIsMobileLeftOpen] = useState(false);
     const [isMobileRightOpen, setIsMobileRightOpen] = useState(false);
-    const [isTimelineExpanded, setIsTimelineExpanded] = useState(true);
     const [isMobile, setIsMobile] = useState(false);
     
     // Detect mobile on mount and resize
@@ -646,132 +645,148 @@ export default function Project({ params }: { params: { id: string } }) {
                     </div>
                 )}
                 
-                {/* Mobile Navigation Bar */}
-                {isMobile && (
-                    <div className="flex items-center justify-between px-3 py-2 bg-slate-900/95 border-b border-slate-800 z-30 safe-top">
-                        <button
-                            onClick={() => setIsMobileLeftOpen(true)}
-                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white transition-colors"
-                            aria-label="Open assets panel"
-                        >
-                            <Menu className="w-5 h-5" />
-                        </button>
-                        <div className="flex items-center gap-2">
-                            <Zap className="w-5 h-5 text-purple-400" />
-                            <span className="text-sm font-semibold text-white truncate max-w-[150px]">
-                                {projectState.projectName || 'Project'}
-                            </span>
+                {/* === MOBILE LAYOUT === */}
+                {isMobile ? (
+                    <div className="flex flex-col h-full bg-slate-950">
+                        {/* Mobile Header */}
+                        <div className="flex items-center justify-between px-3 py-2 bg-slate-900/95 backdrop-blur border-b border-slate-800 z-30 safe-top shrink-0">
+                            <button
+                                onClick={() => router.push('/')}
+                                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                            <div className="flex items-center gap-2">
+                                <Zap className="w-4 h-4 text-purple-400" />
+                                <span className="text-sm font-semibold text-white truncate max-w-[150px]">
+                                    {projectState.projectName || 'Project'}
+                                </span>
+                            </div>
+                            <button
+                                onClick={() => setIsMobileRightOpen(true)}
+                                className="px-3 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg shadow-purple-500/25"
+                            >
+                                Export
+                            </button>
                         </div>
-                        <button
-                            onClick={() => setIsMobileRightOpen(true)}
-                            className="p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white transition-colors"
-                            aria-label="Open properties panel"
-                        >
-                            <Settings className="w-5 h-5" />
-                        </button>
+                        
+                        {/* Video Preview Area */}
+                        <div className="flex-1 flex items-center justify-center bg-[#0a0e1a] min-h-0 relative">
+                            <PreviewPlayer isMobile={true} />
+                        </div>
+                        
+                        {/* Playback Controls & Time */}
+                        <div className="flex items-center justify-between py-2 px-3 bg-slate-900/95 backdrop-blur border-t border-slate-800 shrink-0">
+                            {/* Tools Button */}
+                            <button 
+                                onClick={() => setIsMobileLeftOpen(true)}
+                                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                            >
+                                <Menu className="w-4 h-4" />
+                                <span className="text-xs font-medium">Tools</span>
+                            </button>
+                            
+                            {/* Play Button - Center */}
+                            <button 
+                                onClick={() => dispatch(setIsPlaying(!isPlaying))}
+                                className="w-12 h-12 rounded-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white flex items-center justify-center transition-all shadow-lg shadow-purple-500/30 active:scale-95"
+                            >
+                                {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5 ml-0.5" />}
+                            </button>
+                            
+                            {/* Time Display */}
+                            <div className="flex items-center gap-1 text-slate-400 bg-slate-800/50 px-2.5 py-1.5 rounded-xl">
+                                <span className="text-xs font-mono text-purple-400">{currentTime.toFixed(1)}s</span>
+                                <span className="text-xs text-slate-600">/</span>
+                                <span className="text-xs font-mono text-slate-500">{duration.toFixed(1)}s</span>
+                            </div>
+                        </div>
+                        
+                        {/* Timeline - Compact version */}
+                        <div className="shrink-0 bg-slate-900 border-t border-slate-800 safe-bottom">
+                            <Timeline isMobile={true} />
+                        </div>
+                        
+                        {/* Mobile Drawers */}
+                        {isMobileLeftOpen && (
+                            <>
+                                <div 
+                                    className="fixed inset-0 mobile-overlay z-40"
+                                    onClick={closeMobilePanels}
+                                />
+                                <div className="fixed inset-y-0 left-0 z-50 w-[85vw] max-w-[320px] animate-slide-in-left">
+                                    <div className="h-full flex flex-col bg-slate-950 border-r border-slate-800">
+                                        <div className="flex items-center justify-between p-3 border-b border-slate-800 safe-top bg-slate-900/95 backdrop-blur">
+                                            <span className="text-sm font-semibold text-white">Assets & Tools</span>
+                                            <button
+                                                onClick={() => setIsMobileLeftOpen(false)}
+                                                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                        <div className="flex-1 overflow-hidden">
+                                            <LeftSidebar onOpenModal={() => setIsMobileLeftOpen(false)} />
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                        
+                        {isMobileRightOpen && (
+                            <>
+                                <div 
+                                    className="fixed inset-0 mobile-overlay z-40"
+                                    onClick={closeMobilePanels}
+                                />
+                                <div className="fixed inset-y-0 right-0 z-50 w-[85vw] max-w-[320px] animate-slide-in-right">
+                                    <div className="h-full flex flex-col bg-slate-950 border-l border-slate-800">
+                                        <div className="flex items-center justify-between p-3 border-b border-slate-800 safe-top bg-slate-900/95 backdrop-blur">
+                                            <span className="text-sm font-semibold text-white">Properties & Export</span>
+                                            <button
+                                                onClick={() => setIsMobileRightOpen(false)}
+                                                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                                            >
+                                                <X className="w-4 h-4" />
+                                            </button>
+                                        </div>
+                                        <div className="flex-1 overflow-hidden">
+                                            <RightSidebar />
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
+                ) : (
+                    /* === DESKTOP LAYOUT === */
+                    <>
+                        {/* Main Content */}
+                        <div className="flex flex-1 overflow-hidden min-h-0">
+                            {/* Left Sidebar - Desktop */}
+                            <div className="hidden lg:block">
+                                <LeftSidebar />
+                            </div>
+
+                            {/* Center - Video Preview */}
+                            <div className="flex items-center justify-center flex-col flex-1 overflow-hidden bg-[#0a0e1a] min-w-0">
+                                <PreviewPlayer />
+                            </div>
+
+                            {/* Right Sidebar - Desktop */}
+                            <div className="hidden lg:block">
+                                <RightSidebar />
+                            </div>
+                        </div>
+
+                        {/* Timeline at bottom */}
+                        <div className="flex flex-col border-t border-slate-800 bg-[#0f172a] z-10 flex-shrink-0 overflow-visible safe-bottom">
+                            <div className="flex-1 flex flex-col min-w-0 overflow-visible">
+                                <Timeline />
+                            </div>
+                        </div>
+                    </>
                 )}
-
-                {/* Main Content */}
-                <div className="flex flex-1 overflow-hidden min-h-0">
-                    {/* Left Sidebar - Desktop */}
-                    <div className="hidden lg:block">
-                        <LeftSidebar />
-                    </div>
-                    
-                    {/* Mobile Left Sidebar Drawer */}
-                    {isMobile && isMobileLeftOpen && (
-                        <>
-                            <div 
-                                className="fixed inset-0 mobile-overlay z-40"
-                                onClick={closeMobilePanels}
-                            />
-                            <div className="fixed inset-y-0 left-0 z-50 w-[85vw] max-w-[320px] animate-slide-in-left safe-top">
-                                <div className="h-full flex flex-col bg-[#0f172a]">
-                                    <div className="flex items-center justify-between p-3 border-b border-slate-800">
-                                        <span className="text-sm font-semibold text-white">Assets & Tools</span>
-                                        <button
-                                            onClick={() => setIsMobileLeftOpen(false)}
-                                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                    <div className="flex-1 overflow-hidden">
-                                        <LeftSidebar />
-                                    </div>
-                                </div>
-                            </div>
-                        </>
-                    )}
-
-                    {/* Center - Video Preview */}
-                    <div className="flex items-center justify-center flex-col flex-1 overflow-hidden bg-[#0a0e1a] min-w-0">
-                        <PreviewPlayer />
-                    </div>
-
-                    {/* Right Sidebar - Desktop */}
-                    <div className="hidden lg:block">
-                        <RightSidebar />
-                    </div>
-                    
-                    {/* Mobile Right Sidebar Drawer */}
-                    {isMobile && isMobileRightOpen && (
-                        <>
-                            <div 
-                                className="fixed inset-0 mobile-overlay z-40"
-                                onClick={closeMobilePanels}
-                            />
-                            <div className="fixed inset-y-0 right-0 z-50 w-[85vw] max-w-[320px] animate-slide-in-right safe-top">
-                                <div className="h-full flex flex-col bg-[#0f172a]">
-                                    <div className="flex items-center justify-between p-3 border-b border-slate-800">
-                                        <span className="text-sm font-semibold text-white">Properties</span>
-                                        <button
-                                            onClick={() => setIsMobileRightOpen(false)}
-                                            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                    <div className="flex-1 overflow-hidden">
-                                        <RightSidebar />
-                                    </div>
-                                </div>
-                            </div>
-                        </>
-                    )}
-                </div>
-
-                {/* Timeline at bottom - with mobile collapse toggle */}
-                <div className="flex flex-col border-t border-slate-800 bg-[#0f172a] z-10 flex-shrink-0 overflow-visible safe-bottom">
-                    {/* Mobile timeline toggle */}
-                    {isMobile && (
-                        <button
-                            onClick={() => setIsTimelineExpanded(!isTimelineExpanded)}
-                            className="flex items-center justify-center gap-2 py-2 bg-slate-800/50 hover:bg-slate-800 transition-colors"
-                        >
-                            {isTimelineExpanded ? (
-                                <>
-                                    <ChevronDown className="w-4 h-4 text-slate-400" />
-                                    <span className="text-xs text-slate-400">Hide Timeline</span>
-                                </>
-                            ) : (
-                                <>
-                                    <ChevronUp className="w-4 h-4 text-slate-400" />
-                                    <span className="text-xs text-slate-400">Show Timeline</span>
-                                </>
-                            )}
-                        </button>
-                    )}
-                    
-                    <div 
-                        className={`flex-1 flex flex-col min-w-0 overflow-visible transition-all duration-300 ${
-                            isMobile && !isTimelineExpanded ? 'h-0 overflow-hidden' : ''
-                        }`}
-                    >
-                        <Timeline />
-                    </div>
-                </div>
 
                 {/* Upgrade Modal */}
                 <UpgradeModal

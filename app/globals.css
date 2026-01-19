@@ -91,14 +91,24 @@
     }
 }
 
-/* Mobile editor container - no scaling */
+/* Mobile editor container - no scaling, fixed height */
 @media (max-width: 1023px) {
     .editor-container {
         width: 100vw;
         height: 100vh;
+        height: 100dvh; /* Dynamic viewport height for mobile browsers */
         display: flex;
         flex-direction: column;
         overflow: hidden;
+    }
+    
+    /* Ensure mobile layout doesn't overflow */
+    html, body {
+        overflow: hidden;
+        overscroll-behavior: none;
+        position: fixed;
+        width: 100%;
+        height: 100%;
     }
 }
 
@@ -230,4 +240,31 @@
     -ms-user-select: none;
     user-select: none;
     -webkit-touch-callout: none;
+}
+
+/* Custom scrollbar for timeline - thin on mobile */
+.custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(100, 116, 139, 0.5) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    height: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background-color: rgba(100, 116, 139, 0.5);
+    border-radius: 2px;
+}
+
+/* Mobile-specific: smaller video player controls */
+@media (max-width: 1023px) {
+    /* Hide Remotion player controls on mobile - we use custom ones */
+    .remotion-player-controls {
+        display: none !important;
+    }
 }

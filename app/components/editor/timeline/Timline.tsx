@@ -15,7 +15,11 @@ import { GripVertical, Clock, Film, Type, Music, RefreshCw, X, ZoomIn, ZoomOut, 
 import { MediaFile, TextElement } from "@/app/types";
 import { getVideoDuration } from "@/app/utils/videoDimensions";
 import Waveform from "./Waveform";
-export const Timeline = () => {
+interface TimelineProps {
+    isMobile?: boolean;
+}
+
+export const Timeline = ({ isMobile = false }: TimelineProps) => {
     const { currentTime, timelineZoom, enableMarkerTracking, activeElement, activeElementIndex, mediaFiles, textElements, duration, isPlaying, fps } = useAppSelector((state) => state.projectState);
     const dispatch = useDispatch();
     const timelineRef = useRef<HTMLDivElement>(null);
@@ -912,19 +916,176 @@ export const Timeline = () => {
         (e.target as Element).releasePointerCapture(e.pointerId);
     };
 
+    // Mobile compact layout
+    if (isMobile) {
+        return (
+            <div className="w-full bg-slate-900 flex flex-col shrink-0 z-30" style={{ height: '115px' }}>
+                {/* Mobile Tracks Container - Horizontal scroll with thumbnails */}
+                <div 
+                    className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar relative px-2 select-none cursor-crosshair touch-pan-x scrollbar-hide" 
+                    ref={timelineRef}
+                    onPointerDown={handleScrubStart}
+                    onPointerMove={handleScrubMove}
+                    onPointerUp={handleScrubEnd}
+                    onPointerLeave={handleScrubEnd}
+                >
+                    <div className="relative z-10 flex flex-col gap-1 min-w-max py-1.5">
+                        {/* Video Track - Compact thumbnails */}
+                        <div className="flex items-center h-14 gap-0.5 relative" onClick={(e) => e.stopPropagation()}>
+                            {mediaFiles.filter((clip) => clip.type === 'video').length === 0 && (
+                                <div className="text-slate-500 text-[10px] ml-2 flex items-center gap-1 border border-dashed border-slate-700 rounded-lg px-3 py-1.5">
+                                    Tap Tools to add clips
+                                </div>
+                            )}
+                            {mediaFiles
+                                .filter((clip) => clip.type === 'video')
+                                .sort((a, b) => a.positionStart - b.positionStart)
+                                .map((clip) => {
+                                    const clipDuration = clip.positionEnd - clip.positionStart;
+                                    const clipWidth = clipDuration * timelineZoom;
+                                    const isDraggingVideo = draggingVideoItem?.id === clip.id;
+                                    return (
+                                        <div
+                                            key={clip.id}
+                                            className={`group relative h-14 bg-slate-800 rounded-lg border overflow-hidden select-none touch-none
+                                                ${isDraggingVideo ? 'opacity-70 ring-2 ring-purple-400 z-30' : ''}
+                                                ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'border-2 border-purple-400 z-20 shadow-lg shadow-purple-500/20' : 'border-slate-600'}
+                                            `}
+                                            style={{ 
+                                                width: `${Math.max(clipWidth, 40)}px`,
+                                                left: `${clip.positionStart * timelineZoom}px`,
+                                                position: 'absolute',
+                                            }}
+                                            onPointerDown={(e) => {
+                                                e.stopPropagation();
+                                                if ((e.target as HTMLElement).closest('.resize-handle')) return;
+                                                const allMediaIndex = mediaFiles.findIndex(m => m.id === clip.id);
+                                                dispatch(setActiveElement('media'));
+                                                dispatch(setActiveElementIndex(allMediaIndex));
+                                                handleVideoDragStart(e, clip);
+                                            }}
+                                        >
+                                            {clip.src && (
+                                                <video 
+                                                    src={clip.src}
+                                                    className="absolute inset-0 w-full h-full object-cover opacity-70 pointer-events-none"
+                                                    muted
+                                                    onLoadedMetadata={(e) => { e.currentTarget.currentTime = 1; }}
+                                                />
+                                            )}
+                                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-1 py-0.5">
+                                                <span className="text-[8px] text-white truncate block font-medium">{clip.fileName}</span>
+                                            </div>
+                                            {/* Resize Handle */}
+                                            <div 
+                                                className="resize-handle absolute right-0 top-0 bottom-0 w-4 cursor-col-resize bg-purple-500/0 active:bg-purple-500/50 touch-none"
+                                                onPointerDown={(e) => {
+                                                    e.stopPropagation();
+                                                    handleResizeStart(e, clip.id, 'clip', clipWidth);
+                                                }}
+                                            />
+                                        </div>
+                                    );
+                                })}
+                        </div>
+
+                        {/* Audio Track - Compact */}
+                        {mediaFiles.filter((clip) => clip.type === 'audio').length > 0 && (
+                            <div className="flex items-center h-5 gap-0.5 relative" onClick={(e) => e.stopPropagation()}>
+                                {mediaFiles
+                                    .filter((clip) => clip.type === 'audio')
+                                    .map((clip) => {
+                                        const audioDuration = clip.positionEnd - clip.positionStart;
+                                        const audioWidth = audioDuration * timelineZoom;
+                                        return (
+                                            <div 
+                                                key={clip.id}
+                                                className={`relative h-5 bg-blue-900/40 rounded border overflow-hidden touch-none
+                                                    ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'border-purple-400' : 'border-blue-500/30'}
+                                                `}
+                                                style={{ 
+                                                    width: `${audioWidth}px`, 
+                                                    left: `${clip.positionStart * timelineZoom}px`, 
+                                                    position: 'absolute',
+                                                }}
+                                                onPointerDown={(e) => {
+                                                    e.stopPropagation();
+                                                    const allMediaIndex = mediaFiles.findIndex(m => m.id === clip.id);
+                                                    dispatch(setActiveElement('media'));
+                                                    dispatch(setActiveElementIndex(allMediaIndex));
+                                                    handleAudioDragStart(e, clip);
+                                                }}
+                                            >
+                                                <div className="flex items-center h-full px-1">
+                                                    <Music className="w-2.5 h-2.5 text-blue-400 mr-0.5 shrink-0" />
+                                                    <span className="text-[8px] text-blue-200 truncate">{clip.fileName}</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                            </div>
+                        )}
+
+                        {/* Text Track - Compact */}
+                        {textElements.length > 0 && (
+                            <div className="flex items-center h-4 gap-0.5 relative" onClick={(e) => e.stopPropagation()}>
+                                {textElements.map((layer) => {
+                                    const textDuration = layer.positionEnd - layer.positionStart;
+                                    const textWidth = textDuration * timelineZoom;
+                                    return (
+                                        <div
+                                            key={layer.id}
+                                            className={`absolute h-4 rounded border flex items-center px-1 touch-none
+                                                ${activeElement === 'text' && textElements[activeElementIndex]?.id === layer.id ? 'bg-purple-600 border-purple-400' : 'bg-purple-900/40 border-purple-500/30'}
+                                            `}
+                                            style={{
+                                                left: `${layer.positionStart * timelineZoom}px`,
+                                                width: `${Math.max(textWidth, 24)}px`,
+                                            }}
+                                            onPointerDown={(e) => {
+                                                e.stopPropagation();
+                                                const layerIndex = textElements.findIndex(t => t.id === layer.id);
+                                                dispatch(setActiveElement('text'));
+                                                dispatch(setActiveElementIndex(layerIndex));
+                                                handleTextDragStart(e, layer);
+                                            }}
+                                        >
+                                            <Type className="w-2 h-2 text-purple-300 mr-0.5 shrink-0" />
+                                            <span className="text-[7px] text-purple-100 truncate">{layer.text || 'T'}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Playhead */}
+                    <div 
+                        className="absolute top-0 bottom-0 w-0.5 bg-pink-500 z-50 pointer-events-none"
+                        style={{ left: `${currentFrame * PIXELS_PER_FRAME + 8}px` }}
+                    >
+                        <div className="absolute -top-0 -translate-x-1/2 w-2 h-2 bg-pink-500 rotate-45 transform rounded-sm shadow-lg shadow-pink-500/50"></div>
+                    </div>
+                </div>
+                <GlobalKeyHandlerProps handleDuplicate={handleDuplicate} handleSplit={handleSplit} handleDelete={handleDelete} />
+            </div>
+        );
+    }
+
+    // Desktop layout
     return (
-        <div className="w-full h-full min-h-[160px] lg:min-h-[200px] max-h-[250px] lg:max-h-[300px] bg-[#0f172a] border-t border-slate-800 flex flex-col shrink-0 z-30">
+        <div className="w-full h-full min-h-[200px] max-h-[300px] bg-[#0f172a] border-t border-slate-800 flex flex-col shrink-0 z-30">
             {/* Timeline Header */}
-            <div className="min-h-[40px] lg:h-10 bg-[#1e293b] border-b border-slate-800 flex items-center justify-between px-2 lg:px-4 shrink-0 gap-2 flex-wrap py-1 lg:py-0">
+            <div className="h-10 bg-[#1e293b] border-b border-slate-800 flex items-center justify-between px-4 shrink-0 gap-2">
                 <div className="flex items-center gap-2 text-slate-400">
                     <Film className="w-4 h-4" />
-                    <span className="text-xs font-bold uppercase tracking-wider hidden sm:inline">Timeline</span>
+                    <span className="text-xs font-bold uppercase tracking-wider">Timeline</span>
                 </div>
-                <div className="flex items-center gap-2 lg:gap-4 flex-wrap justify-end">
-                    {/* Time Display - Always visible */}
-                    <div className="flex items-center gap-1.5 text-slate-400 bg-slate-900/50 px-2 lg:px-3 py-1 rounded-md order-first sm:order-none">
+                <div className="flex items-center gap-4">
+                    {/* Time Display */}
+                    <div className="flex items-center gap-1.5 text-slate-400 bg-slate-900/50 px-3 py-1 rounded-md">
                         <Clock className="w-3 h-3" />
-                        <span className="text-[10px] lg:text-xs font-mono text-blue-400">{currentTime.toFixed(1)}s / {duration.toFixed(1)}s</span>
+                        <span className="text-xs font-mono text-blue-400">{currentTime.toFixed(1)}s / {duration.toFixed(1)}s</span>
                     </div>
                     
                     {/* Split Button - Only show when item is selected */}
@@ -945,7 +1106,7 @@ export const Timeline = () => {
                             <button
                                 onClick={handleSplit}
                                 disabled={!canSplit}
-                                className="p-1.5 lg:p-1.5 text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 rounded transition-colors border border-blue-500/30 hover:border-blue-500/50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-blue-400 disabled:hover:bg-transparent"
+                                className="p-1.5 text-blue-400 hover:text-blue-300 hover:bg-blue-500/20 rounded transition-colors border border-blue-500/30 hover:border-blue-500/50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-blue-400 disabled:hover:bg-transparent"
                                 title={canSplit ? "Split at Playhead (S)" : "Place playhead within element to split"}
                             >
                                 <Scissors className="w-4 h-4" />
@@ -956,14 +1117,14 @@ export const Timeline = () => {
                     {activeElement && (
                         <button
                             onClick={() => handleDelete()}
-                            className="p-1.5 lg:p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded transition-colors border border-red-500/30 hover:border-red-500/50"
+                            className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded transition-colors border border-red-500/30 hover:border-red-500/50"
                             title="Delete Selected Item"
                         >
                             <Trash2 className="w-4 h-4" />
                         </button>
                     )}
                     {/* Zoom Controls */}
-                    <div className="flex items-center gap-1 lg:gap-2">
+                    <div className="flex items-center gap-2">
                         <button
                             onClick={handleZoomFit}
                             className="p-1.5 text-slate-300 hover:text-white hover:bg-slate-700/50 rounded transition-colors"
@@ -979,7 +1140,7 @@ export const Timeline = () => {
                         >
                             <ZoomOut className="w-4 h-4" />
                         </button>
-                        <div className="hidden sm:flex items-center w-24 lg:w-40">
+                        <div className="flex items-center w-40">
                             <input
                                 type="range"
                                 min="0"
@@ -987,7 +1148,7 @@ export const Timeline = () => {
                                 step="1"
                                 value={zoomToSlider(timelineZoom)}
                                 onChange={handleZoomSliderChange}
-                                className="w-full h-2 lg:h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500 touch-manipulation"
+                                className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
                                 title={`Zoom: ${timelineZoom}px/s`}
                             />
                         </div>

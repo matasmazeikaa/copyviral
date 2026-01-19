@@ -330,18 +330,36 @@ export async function downloadMediaFileById(
     const supabase = createClient();
     const userFolder = getUserFolderPath(userId);
     
-    // The file is stored as {fileId}.{ext} in the user's folder
-    // supabaseFileId already contains the extension
-    const filePath = `${userFolder}/${supabaseFileId}`;
+    // Extract fileId from supabaseFileId (remove extension if present)
+    const fileIdWithoutExt = supabaseFileId.replace(/\.[^/.]+$/, '');
+    const fileExt = supabaseFileId.split('.').pop() || originalFileName.split('.').pop() || 'mp4';
+    
+    // Build both old and new format paths to try
+    const oldFormatPath = `${userFolder}/${supabaseFileId}`;
+    const newFormatFileName = constructStorageFileName(fileIdWithoutExt, originalFileName);
+    const newFormatPath = `${userFolder}/${newFormatFileName}`;
 
     try {
-        // Download file from Supabase storage
-        const { data, error } = await supabase.storage
+        // Try old format first (most common: {fileId}.{ext})
+        let { data, error } = await supabase.storage
             .from(STORAGE_BUCKET)
-            .download(filePath);
+            .download(oldFormatPath);
+
+        // If old format fails, try new format ({fileId}--{encodedOriginalName}.{ext})
+        if (error || !data) {
+            const result = await supabase.storage
+                .from(STORAGE_BUCKET)
+                .download(newFormatPath);
+            data = result.data;
+            error = result.error;
+        }
 
         if (error) {
-            throw error;
+            // Extract meaningful error message from Supabase error
+            const errorMessage = error.message || 
+                (typeof error === 'object' ? JSON.stringify(error) : String(error)) ||
+                'Unknown storage error';
+            throw new Error(`Storage error: ${errorMessage}`);
         }
 
         if (!data) {
@@ -353,7 +371,11 @@ export async function downloadMediaFileById(
         return file;
     } catch (error: any) {
         console.error('Error downloading file by ID:', error);
-        throw new Error(error.message || 'Failed to download file from Supabase');
+        // Provide more helpful error messages
+        const message = error?.message || 
+            (typeof error === 'object' ? JSON.stringify(error) : String(error)) || 
+            'Failed to download file from Supabase';
+        throw new Error(message);
     }
 }
 
