@@ -3,7 +3,6 @@ import type { Metadata } from 'next'
 import { Inter, Roboto_Mono } from "next/font/google";
 import { Providers } from './providers'
 import Header from "./components/header/Header";
-import Footer from "./components/footer/Footer";
 import { Toaster } from 'react-hot-toast';
 import { Analytics } from "@vercel/analytics/next"
 
@@ -50,7 +49,6 @@ export default function RootLayout({
             {children}
             <Analytics />
           </main>
-          {/* <Footer /> */}
         </Providers>
       </body>
     </html>
