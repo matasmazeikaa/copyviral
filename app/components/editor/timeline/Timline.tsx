@@ -1,17 +1,11 @@
 import { useAppSelector } from "@/app/store";
-import { setMarkerTrack, setTextElements, setMediaFiles, setTimelineZoom, setCurrentTime, setIsPlaying, setActiveElement, setActiveElementIndex } from "@/app/store/slices/projectSlice";
+import { setTextElements, setMediaFiles, setTimelineZoom, setCurrentTime, setIsPlaying, setActiveElement, setActiveElementIndex } from "@/app/store/slices/projectSlice";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch } from "react-redux";
-import Image from "next/image";
-import Header from "./Header";
-import VideoTimeline from "./elements-timeline/VideoTimeline";
-import ImageTimeline from "./elements-timeline/ImageTimeline";
-import AudioTimeline from "./elements-timeline/AudioTimline";
-import TextTimeline from "./elements-timeline/TextTimeline";
 import { throttle } from 'lodash';
 import GlobalKeyHandlerProps from "../../../components/editor/keys/GlobalKeyHandlerProps";
 import toast from "react-hot-toast";
-import { GripVertical, Clock, Film, Type, Music, RefreshCw, X, ZoomIn, ZoomOut, Ruler, Trash2, Scissors } from 'lucide-react';
+import { Clock, Film, Type, Music, X, ZoomIn, ZoomOut, Ruler, Trash2, Scissors } from 'lucide-react';
 import { MediaFile, TextElement } from "@/app/types";
 import { getVideoDuration } from "@/app/utils/videoDimensions";
 import Waveform from "./Waveform";
@@ -916,20 +910,181 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         (e.target as Element).releasePointerCapture(e.pointerId);
     };
 
-    // Mobile compact layout
+    // Mobile: Track if we're currently scrolling (to prevent scroll/time update loops)
+    const [isMobileScrolling, setIsMobileScrolling] = useState(false);
+    const [mobileContainerWidth, setMobileContainerWidth] = useState(300);
+    const mobileScrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const lastProgrammaticScrollRef = useRef<number>(0);
+    
+    // Mobile: Update container width on resize
+    useEffect(() => {
+        if (!isMobile || !timelineRef.current) return;
+        
+        const updateWidth = () => {
+            if (timelineRef.current) {
+                setMobileContainerWidth(timelineRef.current.clientWidth);
+            }
+        };
+        
+        updateWidth();
+        window.addEventListener('resize', updateWidth);
+        return () => window.removeEventListener('resize', updateWidth);
+    }, [isMobile]);
+    
+    // Mobile: Sync scroll position with currentTime (playhead stays centered)
+    useEffect(() => {
+        if (!isMobile || !timelineRef.current || isMobileScrolling) return;
+        
+        const container = timelineRef.current;
+        const centerOffset = mobileContainerWidth / 2;
+        
+        // Calculate scroll position to center the current time
+        // The content starts at centerPadding, so currentTime position in scroll terms is:
+        // centerPadding + (currentTime * timelineZoom) - centerOffset
+        // Which simplifies to: currentTime * timelineZoom (since centerPadding = centerOffset)
+        const targetScrollLeft = currentTime * timelineZoom;
+        const maxScroll = container.scrollWidth - container.clientWidth;
+        const clampedScroll = Math.max(0, Math.min(maxScroll, targetScrollLeft));
+        
+        // Only scroll if the difference is significant (avoid micro-adjustments)
+        if (Math.abs(container.scrollLeft - clampedScroll) > 2) {
+            lastProgrammaticScrollRef.current = Date.now();
+            container.scrollLeft = clampedScroll;
+        }
+    }, [isMobile, currentTime, timelineZoom, isMobileScrolling, mobileContainerWidth]);
+    
+    // Mobile: Handle scroll to update currentTime
+    const handleMobileScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+        if (!isMobile || !timelineRef.current) return;
+        
+        // Ignore programmatic scrolls
+        if (Date.now() - lastProgrammaticScrollRef.current < 50) return;
+        
+        setIsMobileScrolling(true);
+        
+        const container = timelineRef.current;
+        
+        // Calculate time at center of viewport
+        // scrollLeft directly corresponds to time * timelineZoom due to our padding setup
+        const scrollLeft = container.scrollLeft;
+        const timeAtCenter = scrollLeft / timelineZoom;
+        const clampedTime = Math.max(0, Math.min(duration, timeAtCenter));
+        
+        dispatch(setCurrentTime(clampedTime));
+        dispatch(setIsPlaying(false));
+        
+        // Clear existing timeout
+        if (mobileScrollTimeoutRef.current) {
+            clearTimeout(mobileScrollTimeoutRef.current);
+        }
+        
+        // Reset scrolling state after scroll ends
+        mobileScrollTimeoutRef.current = setTimeout(() => {
+            setIsMobileScrolling(false);
+        }, 150);
+    }, [isMobile, timelineZoom, duration, dispatch]);
+    
+    // Cleanup mobile scroll timeout
+    useEffect(() => {
+        return () => {
+            if (mobileScrollTimeoutRef.current) {
+                clearTimeout(mobileScrollTimeoutRef.current);
+            }
+        };
+    }, []);
+
+    // Mobile compact layout with centered playhead (CapCut style)
     if (isMobile) {
+        // Calculate padding needed to allow scrolling to start/end
+        const centerPadding = mobileContainerWidth / 2;
+        const totalTimelineWidth = duration * timelineZoom;
+        // Total scrollable width: padding + content + padding
+        const totalContentWidth = totalTimelineWidth + (centerPadding * 2);
+        
+        // Check if we can split the current element
+        const canSplitMobile = (() => {
+            if (!activeElement) return false;
+            if (activeElement === 'media') {
+                const element = mediaFiles[activeElementIndex];
+                if (element) {
+                    return currentTime > element.positionStart && currentTime < element.positionEnd;
+                }
+            } else if (activeElement === 'text') {
+                const element = textElements[activeElementIndex];
+                if (element) {
+                    return currentTime > element.positionStart && currentTime < element.positionEnd;
+                }
+            }
+            return false;
+        })();
+        
         return (
-            <div className="w-full bg-slate-900 flex flex-col shrink-0 z-30" style={{ height: '115px' }}>
+            <div className="w-full bg-slate-900 flex flex-col shrink-0 z-30 relative" style={{ height: '145px' }}>
+                {/* Mobile Toolbar - Time display and action buttons */}
+                <div className="h-[30px] bg-slate-800/80 border-b border-slate-700/50 flex items-center justify-between px-3 shrink-0">
+                    {/* Time Display */}
+                    <div className="flex items-center gap-1.5 text-slate-300">
+                        <Clock className="w-3 h-3 text-pink-400" />
+                        <span className="text-[11px] font-mono font-medium text-pink-300">{currentTime.toFixed(1)}s</span>
+                        <span className="text-slate-500 text-[10px]">/</span>
+                        <span className="text-[11px] font-mono text-slate-400">{duration.toFixed(1)}s</span>
+                    </div>
+                    
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2">
+                        {activeElement && (
+                            <>
+                                <button
+                                    onClick={handleSplit}
+                                    disabled={!canSplitMobile}
+                                    className="p-1.5 text-blue-400 hover:text-blue-300 active:bg-blue-500/30 rounded-md transition-colors border border-blue-500/30 disabled:opacity-30 disabled:border-slate-600 disabled:text-slate-500"
+                                    title="Split"
+                                >
+                                    <Scissors className="w-4 h-4" />
+                                </button>
+                                <button
+                                    onClick={() => handleDelete()}
+                                    className="p-1.5 text-red-400 hover:text-red-300 active:bg-red-500/30 rounded-md transition-colors border border-red-500/30"
+                                    title="Delete"
+                                >
+                                    <Trash2 className="w-4 h-4" />
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </div>
+                
+                {/* Fixed Center Playhead - Always in the middle */}
+                <div 
+                    className="absolute top-[30px] bottom-0 w-0.5 bg-pink-500 z-50 pointer-events-none"
+                    style={{ left: '50%', transform: 'translateX(-50%)' }}
+                >
+                    <div className="absolute top-1 -translate-x-1/2 w-2.5 h-2.5 bg-pink-500 rotate-45 transform rounded-sm shadow-lg shadow-pink-500/50"></div>
+                    <div className="absolute bottom-1 -translate-x-1/2 w-2.5 h-2.5 bg-pink-500 rotate-45 transform rounded-sm shadow-lg shadow-pink-500/50"></div>
+                </div>
+                
                 {/* Mobile Tracks Container - Horizontal scroll with thumbnails */}
                 <div 
-                    className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar relative px-2 select-none cursor-crosshair touch-pan-x scrollbar-hide" 
+                    className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar relative select-none touch-pan-x scrollbar-hide" 
                     ref={timelineRef}
-                    onPointerDown={handleScrubStart}
+                    onScroll={handleMobileScroll}
+                    onPointerDown={(e) => {
+                        // Only handle scrubbing on the background, not on clips
+                        if ((e.target as HTMLElement).closest('.timeline-clip')) return;
+                        handleScrubStart(e);
+                    }}
                     onPointerMove={handleScrubMove}
                     onPointerUp={handleScrubEnd}
                     onPointerLeave={handleScrubEnd}
                 >
-                    <div className="relative z-10 flex flex-col gap-1 min-w-max py-1.5">
+                    <div 
+                        className="relative z-10 flex flex-col gap-1 py-1.5"
+                        style={{ 
+                            width: `${totalContentWidth}px`,
+                            paddingLeft: `${centerPadding}px`,
+                            paddingRight: `${centerPadding}px`,
+                        }}
+                    >
                         {/* Video Track - Compact thumbnails */}
                         <div className="flex items-center h-14 gap-0.5 relative" onClick={(e) => e.stopPropagation()}>
                             {mediaFiles.filter((clip) => clip.type === 'video').length === 0 && (
@@ -947,7 +1102,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                     return (
                                         <div
                                             key={clip.id}
-                                            className={`group relative h-14 bg-slate-800 rounded-lg border overflow-hidden select-none touch-none
+                                            className={`timeline-clip group relative h-14 bg-slate-800 rounded-lg border overflow-hidden select-none touch-none
                                                 ${isDraggingVideo ? 'opacity-70 ring-2 ring-purple-400 z-30' : ''}
                                                 ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'border-2 border-purple-400 z-20 shadow-lg shadow-purple-500/20' : 'border-slate-600'}
                                             `}
@@ -1000,7 +1155,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                         return (
                                             <div 
                                                 key={clip.id}
-                                                className={`relative h-5 bg-blue-900/40 rounded border overflow-hidden touch-none
+                                                className={`timeline-clip relative h-5 bg-blue-900/40 rounded border overflow-hidden touch-none
                                                     ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'border-purple-400' : 'border-blue-500/30'}
                                                 `}
                                                 style={{ 
@@ -1035,7 +1190,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                     return (
                                         <div
                                             key={layer.id}
-                                            className={`absolute h-4 rounded border flex items-center px-1 touch-none
+                                            className={`timeline-clip absolute h-4 rounded border flex items-center px-1 touch-none
                                                 ${activeElement === 'text' && textElements[activeElementIndex]?.id === layer.id ? 'bg-purple-600 border-purple-400' : 'bg-purple-900/40 border-purple-500/30'}
                                             `}
                                             style={{
@@ -1057,14 +1212,6 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                 })}
                             </div>
                         )}
-                    </div>
-
-                    {/* Playhead */}
-                    <div 
-                        className="absolute top-0 bottom-0 w-0.5 bg-pink-500 z-50 pointer-events-none"
-                        style={{ left: `${currentFrame * PIXELS_PER_FRAME + 8}px` }}
-                    >
-                        <div className="absolute -top-0 -translate-x-1/2 w-2 h-2 bg-pink-500 rotate-45 transform rounded-sm shadow-lg shadow-pink-500/50"></div>
                     </div>
                 </div>
                 <GlobalKeyHandlerProps handleDuplicate={handleDuplicate} handleSplit={handleSplit} handleDelete={handleDelete} />
