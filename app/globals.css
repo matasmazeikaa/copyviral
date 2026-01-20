@@ -102,8 +102,8 @@
         overflow: hidden;
     }
     
-    /* Ensure mobile layout doesn't overflow */
-    html, body {
+    /* Ensure mobile layout doesn't overflow - only when editor is present */
+    body.editor-page {
         overflow: hidden;
         overscroll-behavior: none;
         position: fixed;

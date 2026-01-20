@@ -1263,16 +1263,25 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                                 }}
                                                 onPointerDown={(e) => {
                                                     e.stopPropagation();
+                                                    if ((e.target as HTMLElement).closest('.resize-handle')) return;
                                                     const allMediaIndex = mediaFiles.findIndex(m => m.id === clip.id);
                                                     dispatch(setActiveElement('media'));
                                                     dispatch(setActiveElementIndex(allMediaIndex));
                                                     handleAudioDragStart(e, clip);
                                                 }}
                                             >
-                                                <div className="flex items-center h-full px-1.5">
+                                                <div className="flex items-center h-full px-1.5 pr-5">
                                                     <Music className="w-3 h-3 text-blue-400 mr-1 shrink-0" />
                                                     <span className="text-[9px] text-blue-100 truncate font-medium">{clip.fileName}</span>
                                                 </div>
+                                                {/* Resize Handle */}
+                                                <div 
+                                                    className="resize-handle absolute right-0 top-0 bottom-0 w-4 cursor-col-resize bg-blue-500/0 active:bg-blue-500/50 touch-none"
+                                                    onPointerDown={(e) => {
+                                                        e.stopPropagation();
+                                                        handleResizeStart(e, clip.id, 'clip', audioWidth);
+                                                    }}
+                                                />
                                             </div>
                                         );
                                     })}
@@ -1298,6 +1307,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                             }}
                                             onPointerDown={(e) => {
                                                 e.stopPropagation();
+                                                if ((e.target as HTMLElement).closest('.resize-handle')) return;
                                                 const layerIndex = textElements.findIndex(t => t.id === layer.id);
                                                 dispatch(setActiveElement('text'));
                                                 dispatch(setActiveElementIndex(layerIndex));
@@ -1305,7 +1315,15 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                             }}
                                         >
                                             <Type className="w-2.5 h-2.5 text-purple-300 mr-0.5 shrink-0" />
-                                            <span className="text-[8px] text-purple-100 truncate font-medium">{layer.text || 'T'}</span>
+                                            <span className="text-[8px] text-purple-100 truncate font-medium pr-4">{layer.text || 'T'}</span>
+                                            {/* Resize Handle */}
+                                            <div 
+                                                className="resize-handle absolute right-0 top-0 bottom-0 w-4 cursor-col-resize bg-purple-500/0 active:bg-purple-500/50 touch-none"
+                                                onPointerDown={(e) => {
+                                                    e.stopPropagation();
+                                                    handleResizeStart(e, layer.id, 'text', textWidth);
+                                                }}
+                                            />
                                         </div>
                                     );
                                 })}

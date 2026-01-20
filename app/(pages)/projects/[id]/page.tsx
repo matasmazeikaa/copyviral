@@ -248,6 +248,14 @@ export default function Project({ params }: { params: { id: string } }) {
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
     
+    // Add editor-page class to body for mobile scroll lock (only on editor)
+    useEffect(() => {
+        document.body.classList.add('editor-page');
+        return () => {
+            document.body.classList.remove('editor-page');
+        };
+    }, []);
+    
     // Close sidebars when clicking outside on mobile
     const closeMobilePanels = () => {
         setIsMobileLeftOpen(false);
