@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
           quantity: 1,
         },
       ],
+      allow_promotion_codes: true,
       success_url: `${baseUrl}/subscription?success=true`,
       cancel_url: `${baseUrl}/subscription?canceled=true`,
       subscription_data: {

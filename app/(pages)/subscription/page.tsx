@@ -127,11 +127,6 @@ function SubscriptionPageContent() {
   const handleSubscribe = async (priceId: string) => {
     setCheckoutLoading(priceId);
     try {
-      // Use direct payment link for monthly plan
-      if (priceId === PRICE_IDS.monthly) {
-        window.location.href = 'https://buy.stripe.com/dRm3cvejjfwEe152tN04800';
-        return;
-      }
       await createCheckoutSession(priceId);
     } catch (error: any) {
       toast.error(error.message || 'Failed to start checkout');
