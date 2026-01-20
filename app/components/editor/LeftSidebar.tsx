@@ -20,7 +20,6 @@ import { useAuth } from "@/app/contexts/AuthContext";
 import { useAIAnalysis } from "@/app/contexts/AIAnalysisContext";
 import { DEFAULT_TEXT_STYLE } from "@/app/constants";
 import UpgradeModal from "@/app/components/UpgradeModal";
-import { AIToolsModal, AIToolType } from "@/app/components/AIToolsModal";
 
 const DEFAULT_MEDIA_TIME = 2;
 const CANVAS_WIDTH = 1080;
@@ -28,19 +27,19 @@ const CANVAS_HEIGHT = 1920;
 
 interface LeftSidebarProps {
     onOpenModal?: () => void;
+    onOpenAIModal?: () => void;
 }
 
-export default function LeftSidebar({ onOpenModal }: LeftSidebarProps = {}) {
+export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarProps = {}) {
     const { mediaFiles, filesID, id: projectId, textElements, projectName } = useAppSelector((state) => state.projectState);
     const dispatch = useAppDispatch();
     const router = useRouter();
     const { user, usageInfo, isPremium, canUseAI } = useAuth();
-    const { startAnalysis, isAnalyzing } = useAIAnalysis();
+    const { isAnalyzing } = useAIAnalysis();
     const [isImporting, setIsImporting] = useState(false);
     const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
     const [isAudioLibraryModalOpen, setIsAudioLibraryModalOpen] = useState(false);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
-    const [isAIModalOpen, setIsAIModalOpen] = useState(false);
 
     // Real user stats from AuthContext
     const creditsUsed = usageInfo?.used ?? null;
@@ -49,30 +48,6 @@ export default function LeftSidebar({ onOpenModal }: LeftSidebarProps = {}) {
 
     // Get audio track from mediaFiles
     const audioTrack = mediaFiles.find(m => m.type === 'audio');
-
-    // Handle AI tool selection from modal
-    const handleAIToolSelect = async (tool: AIToolType, url: string) => {
-        if (!user) {
-            toast.error('You must be logged in to use AI tools');
-            return;
-        }
-
-        if (!canUseAI) {
-            setShowUpgradeModal(true);
-            return;
-        }
-
-        // Audio beats is coming soon
-        if (tool === 'audio-beats') {
-            toast('Audio Beat Sync is coming soon! 🎵', { icon: '🚀' });
-            return;
-        }
-
-        setIsAIModalOpen(false);
-
-        // Use context to trigger analysis directly (no navigation delay)
-        startAnalysis(url);
-    };
 
     const handleQuickUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const newFiles = Array.from(e.target.files || []);
@@ -921,7 +896,7 @@ export default function LeftSidebar({ onOpenModal }: LeftSidebarProps = {}) {
                     <button 
                         onClick={() => {
                             onOpenModal?.();
-                            setIsAIModalOpen(true);
+                            onOpenAIModal?.();
                         }}
                         disabled={isAnalyzing}
                         className="w-full group relative text-left"
@@ -1049,19 +1024,6 @@ export default function LeftSidebar({ onOpenModal }: LeftSidebarProps = {}) {
                 onClose={() => setShowUpgradeModal(false)}
                 usedCount={creditsUsed ?? 0}
                 limitCount={creditsLimit}
-            />
-
-            {/* AI Tools Modal */}
-            <AIToolsModal
-                isOpen={isAIModalOpen}
-                onClose={() => setIsAIModalOpen(false)}
-                onSelectTool={handleAIToolSelect}
-                currentProject={{
-                    projectName: projectName || 'Current Project',
-                    mediaFilesCount: mediaFiles?.length || 0,
-                    textElementsCount: textElements?.length || 0
-                }}
-                isProcessing={isAnalyzing}
             />
         </div>
     );

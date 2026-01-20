@@ -117,6 +117,29 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
             }
         };
     }, []);
+    
+    // Auto-scroll timeline to follow playhead during playback (desktop only)
+    useEffect(() => {
+        if (isMobile || !isPlaying || !enableMarkerTracking || !timelineRef.current) return;
+        
+        const container = timelineRef.current;
+        const playheadPosition = currentTime * timelineZoom + 16; // 16px is the left padding
+        const containerLeft = container.scrollLeft;
+        const containerRight = containerLeft + container.clientWidth;
+        
+        // Keep playhead in the center-right area of the visible timeline
+        const targetScrollZone = container.clientWidth * 0.7; // 70% from left edge
+        const targetPosition = containerLeft + targetScrollZone;
+        
+        // If playhead is past the target zone, scroll to keep it visible
+        if (playheadPosition > containerRight - 50) {
+            // Playhead is going off the right edge - scroll right
+            container.scrollLeft = playheadPosition - targetScrollZone;
+        } else if (playheadPosition < containerLeft + 50) {
+            // Playhead is going off the left edge - scroll left
+            container.scrollLeft = Math.max(0, playheadPosition - 50);
+        }
+    }, [currentTime, timelineZoom, isPlaying, enableMarkerTracking, isMobile]);
 
     const throttledZoom = useMemo(() =>
         throttle((value: number) => {
@@ -1059,8 +1082,6 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                     className="absolute top-[30px] bottom-0 w-0.5 bg-pink-500 z-50 pointer-events-none"
                     style={{ left: '50%', transform: 'translateX(-50%)' }}
                 >
-                    <div className="absolute top-1 -translate-x-1/2 w-2.5 h-2.5 bg-pink-500 rotate-45 transform rounded-sm shadow-lg shadow-pink-500/50"></div>
-                    <div className="absolute bottom-1 -translate-x-1/2 w-2.5 h-2.5 bg-pink-500 rotate-45 transform rounded-sm shadow-lg shadow-pink-500/50"></div>
                 </div>
                 
                 {/* Mobile Tracks Container - Horizontal scroll with thumbnails */}
@@ -1068,14 +1089,42 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                     className="flex-1 overflow-x-auto overflow-y-hidden custom-scrollbar relative select-none touch-pan-x scrollbar-hide" 
                     ref={timelineRef}
                     onScroll={handleMobileScroll}
-                    onPointerDown={(e) => {
-                        // Only handle scrubbing on the background, not on clips
-                        if ((e.target as HTMLElement).closest('.timeline-clip')) return;
-                        handleScrubStart(e);
+                    onPointerMove={(e) => {
+                        // Only handle drag operations on mobile, not scrubbing
+                        if (resizingItem) {
+                            handleResizeMove(e);
+                        } else if (textDragStartPos || draggingTextItem) {
+                            handleTextDragMove(e);
+                        } else if (audioDragStartPos || draggingAudioItem) {
+                            handleAudioDragMove(e);
+                        } else if (videoDragStartPos || draggingVideoItem) {
+                            handleVideoDragMove(e);
+                        }
                     }}
-                    onPointerMove={handleScrubMove}
-                    onPointerUp={handleScrubEnd}
-                    onPointerLeave={handleScrubEnd}
+                    onPointerUp={(e) => {
+                        // Only handle drag end operations on mobile
+                        if (resizingItem) {
+                            handleResizeEnd(e);
+                        } else if (draggingTextItem || textDragStartPos) {
+                            handleTextDragEnd(e);
+                        } else if (draggingAudioItem || audioDragStartPos) {
+                            handleAudioDragEnd(e);
+                        } else if (draggingVideoItem || videoDragStartPos) {
+                            handleVideoDragEnd(e);
+                        }
+                    }}
+                    onPointerLeave={(e) => {
+                        // Only handle drag end operations on mobile
+                        if (resizingItem) {
+                            handleResizeEnd(e);
+                        } else if (draggingTextItem || textDragStartPos) {
+                            handleTextDragEnd(e);
+                        } else if (draggingAudioItem || audioDragStartPos) {
+                            handleAudioDragEnd(e);
+                        } else if (draggingVideoItem || videoDragStartPos) {
+                            handleVideoDragEnd(e);
+                        }
+                    }}
                 >
                     <div 
                         className="relative z-10 flex flex-col gap-1 py-1.5"
@@ -1643,10 +1692,14 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                     )}
                 </div>
 
-                {/* Playhead */}
+                {/* Playhead - uses transform for smoother animation during playback */}
                 <div 
                     className="absolute top-0 bottom-0 w-px bg-red-500 z-50 pointer-events-none"
-                    style={{ left: `${currentFrame * PIXELS_PER_FRAME + 16}px` }}
+                    style={{ 
+                        transform: `translateX(${currentTime * timelineZoom + 16}px)`,
+                        willChange: isPlaying ? 'transform' : 'auto',
+                        left: 0,
+                    }}
                 >
                     <div className="absolute -top-0 -translate-x-1/2 w-3 h-3 bg-red-500 rotate-45 transform rounded-sm shadow-sm"></div>
                 </div>

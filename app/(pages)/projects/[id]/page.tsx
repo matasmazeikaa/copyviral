@@ -19,6 +19,7 @@ import { toast } from 'react-hot-toast';
 import { DEFAULT_TEXT_STYLE } from "../../../constants";
 import { incrementAIUsage } from "../../../services/subscriptionService";
 import { useAIAnalysis } from "../../../contexts/AIAnalysisContext";
+import { AIToolsModal, AIToolType } from "../../../components/AIToolsModal";
 import { Link, Eye, Brain, Zap, Sparkles, X, Settings, Play, Pause, Menu, Scissors } from 'lucide-react';
 
 // AI Loading Modal Component for auto-analyze - uses portal for true full-page overlay
@@ -218,7 +219,8 @@ export default function Project({ params }: { params: { id: string } }) {
         loadingStage: contextLoadingStage, 
         pendingUrl,
         setLoadingStage: setContextLoadingStage,
-        completeAnalysis 
+        completeAnalysis,
+        startAnalysis
     } = useAIAnalysis();
     
     // Auto-analyze state (for URL param based triggering)
@@ -232,6 +234,9 @@ export default function Project({ params }: { params: { id: string } }) {
     const [isMobileLeftOpen, setIsMobileLeftOpen] = useState(false);
     const [isMobileRightOpen, setIsMobileRightOpen] = useState(false);
     const [isMobile, setIsMobile] = useState(false);
+    
+    // AI Tools Modal state (lifted from LeftSidebar for mobile support)
+    const [isAIModalOpen, setIsAIModalOpen] = useState(false);
     
     // Detect mobile on mount and resize
     useEffect(() => {
@@ -247,6 +252,30 @@ export default function Project({ params }: { params: { id: string } }) {
     const closeMobilePanels = () => {
         setIsMobileLeftOpen(false);
         setIsMobileRightOpen(false);
+    };
+    
+    // Handle AI tool selection from modal
+    const handleAIToolSelect = async (tool: AIToolType, url: string) => {
+        if (!user) {
+            toast.error('You must be logged in to use AI tools');
+            return;
+        }
+
+        if (!canUseAI) {
+            setShowUpgradeModal(true);
+            return;
+        }
+
+        // Audio beats is coming soon
+        if (tool === 'audio-beats') {
+            toast('Audio Beat Sync is coming soon! 🎵', { icon: '🚀' });
+            return;
+        }
+
+        setIsAIModalOpen(false);
+
+        // Use context to trigger analysis directly (no navigation delay)
+        startAnalysis(url);
     };
     
     // AI credits info
@@ -726,7 +755,10 @@ export default function Project({ params }: { params: { id: string } }) {
                                             </button>
                                         </div>
                                         <div className="flex-1 overflow-hidden">
-                                            <LeftSidebar onOpenModal={() => setIsMobileLeftOpen(false)} />
+                                            <LeftSidebar 
+                                                onOpenModal={() => setIsMobileLeftOpen(false)} 
+                                                onOpenAIModal={() => setIsAIModalOpen(true)}
+                                            />
                                         </div>
                                     </div>
                                 </div>
@@ -765,7 +797,7 @@ export default function Project({ params }: { params: { id: string } }) {
                         <div className="flex flex-1 overflow-hidden min-h-0">
                             {/* Left Sidebar - Desktop */}
                             <div className="hidden lg:block">
-                                <LeftSidebar />
+                                <LeftSidebar onOpenAIModal={() => setIsAIModalOpen(true)} />
                             </div>
 
                             {/* Center - Video Preview */}
@@ -794,6 +826,19 @@ export default function Project({ params }: { params: { id: string } }) {
                     onClose={() => setShowUpgradeModal(false)}
                     usedCount={creditsUsed ?? 0}
                     limitCount={creditsLimit}
+                />
+
+                {/* AI Tools Modal */}
+                <AIToolsModal
+                    isOpen={isAIModalOpen}
+                    onClose={() => setIsAIModalOpen(false)}
+                    onSelectTool={handleAIToolSelect}
+                    currentProject={{
+                        projectName: projectState.projectName || 'Current Project',
+                        mediaFilesCount: projectState.mediaFiles?.length || 0,
+                        textElementsCount: textElements?.length || 0
+                    }}
+                    isProcessing={isContextAnalyzing}
                 />
 
                 {/* AI Loading Modal for auto-analyze (shows for both URL-based and context-based triggers) */}

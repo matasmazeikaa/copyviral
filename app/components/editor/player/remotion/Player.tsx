@@ -1,8 +1,8 @@
 import { Player, PlayerRef } from "@remotion/player";
 import Composition from "./sequence/composition";
 import { useAppSelector } from "@/app/store";
-import { useRef, useEffect, useState } from "react";
-import { setIsPlaying } from "@/app/store/slices/projectSlice";
+import { useRef, useEffect, useState, useCallback } from "react";
+import { setIsPlaying, setCurrentTime } from "@/app/store/slices/projectSlice";
 import { useDispatch } from "react-redux";
 
 const fps = 30;
@@ -22,6 +22,56 @@ export const PreviewPlayer = ({ isMobile = false }: PreviewPlayerProps) => {
     // update frame when current time with marker
     const previousSeekTime = useRef<number>(currentTime);
     const isSeekingRef = useRef<boolean>(false);
+    
+    // RAF-based time sync for smooth playhead updates
+    const rafIdRef = useRef<number | null>(null);
+    const lastDispatchedFrame = useRef<number>(-1);
+    
+    // High-frequency time sync during playback using requestAnimationFrame
+    const syncTimeFromPlayer = useCallback(() => {
+        if (!playerRef.current) return;
+        
+        const currentFrame = playerRef.current.getCurrentFrame();
+        
+        // Only dispatch if frame actually changed to reduce Redux overhead
+        if (currentFrame !== lastDispatchedFrame.current) {
+            lastDispatchedFrame.current = currentFrame;
+            const timeInSeconds = currentFrame / fps;
+            dispatch(setCurrentTime(timeInSeconds));
+        }
+        
+        // Continue the loop while playing
+        if (isPlaying) {
+            rafIdRef.current = requestAnimationFrame(syncTimeFromPlayer);
+        }
+    }, [dispatch, isPlaying]);
+    
+    // Start/stop the RAF loop based on playback state
+    useEffect(() => {
+        if (isPlaying) {
+            // Start the sync loop
+            rafIdRef.current = requestAnimationFrame(syncTimeFromPlayer);
+        } else {
+            // Stop the sync loop
+            if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+            }
+            // Final sync when paused
+            if (playerRef.current) {
+                const currentFrame = playerRef.current.getCurrentFrame();
+                const timeInSeconds = currentFrame / fps;
+                dispatch(setCurrentTime(timeInSeconds));
+            }
+        }
+        
+        return () => {
+            if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+            }
+        };
+    }, [isPlaying, syncTimeFromPlayer, dispatch]);
     
     // Calculate player size to fit within container while maintaining 9:16 aspect ratio
     useEffect(() => {

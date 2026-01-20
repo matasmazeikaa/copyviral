@@ -164,8 +164,6 @@ export const VideoSequenceItem: React.FC<VideoSequenceItemProps> = ({ item, opti
                                     left: 0,
                                     width: "100%",
                                     height: "100%",
-                                    // "cover" for fill mode - fills entire container, may crop
-                                    // "contain" for fit/16:9/1:1 - shows full video within container
                                     objectFit: item.aspectRatioFit === 'cover' ? "cover" : "contain",
                                     position: "absolute"
                                 }}
