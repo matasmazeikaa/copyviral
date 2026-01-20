@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { scrapeVideo } from '@/app/services/videoScraperService';
+import { createClient } from '@/app/utils/supabase/server';
 
 export async function POST(request: NextRequest) {
   try {
+    // Require authentication
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { url, platform } = body;
 

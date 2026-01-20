@@ -47,21 +47,24 @@ export async function POST(request: NextRequest) {
 
   let event: Stripe.Event;
 
-  // DEV ONLY: Allow test requests without signature
-  if (process.env.NODE_ENV === 'development' && !sig) {
-    console.log('DEV MODE: Processing without signature verification');
-    try {
-      event = JSON.parse(body) as Stripe.Event;
-    } catch {
-      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
-    }
-  } else {
-    try {
-      event = stripe.webhooks.constructEvent(body, sig!, webhookSecret);
-    } catch (err: any) {
-      console.error('Webhook signature verification failed:', err.message);
-      return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
-    }
+  // SECURITY: Always verify webhook signature
+  // In development, you can use Stripe CLI to forward webhooks with valid signatures:
+  // stripe listen --forward-to localhost:3000/api/stripe/webhook
+  if (!sig) {
+    console.error('Missing Stripe signature header');
+    return NextResponse.json({ error: 'Missing signature' }, { status: 400 });
+  }
+
+  if (!webhookSecret) {
+    console.error('STRIPE_WEBHOOK_SECRET not configured');
+    return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 });
+  }
+
+  try {
+    event = stripe.webhooks.constructEvent(body, sig, webhookSecret);
+  } catch (err: any) {
+    console.error('Webhook signature verification failed:', err.message);
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
   }
 
   console.log('Webhook event type:', event.type);

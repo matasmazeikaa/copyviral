@@ -1,10 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
+import { createClient } from '@/app/utils/supabase/server';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
 
 export async function GET(request: NextRequest) {
   try {
+    // Require authentication for debug endpoint
+    const supabase = await createClient();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Only allow in development mode
+    if (process.env.NODE_ENV !== 'development') {
+      return NextResponse.json({ error: 'Debug endpoint disabled in production' }, { status: 403 });
+    }
+
     // List all active prices
     const prices = await stripe.prices.list({
       active: true,
