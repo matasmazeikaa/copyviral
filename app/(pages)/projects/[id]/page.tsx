@@ -508,9 +508,6 @@ export default function Project({ params }: { params: { id: string } }) {
             } else {
                 setLoadingStage('processing');
             }
-
-            // Increment AI usage
-            await incrementAIUsage('video_analysis', { fileName: file.name });
             await refreshUsage(true);
 
             // Store the video file for audio extraction
