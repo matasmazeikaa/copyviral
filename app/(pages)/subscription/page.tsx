@@ -26,6 +26,7 @@ import {
 interface SubscriptionData {
   subscriptionStatus: string;
   subscriptionCurrentPeriodEnd: string | null;
+  subscriptionPriceId: string | null;
 }
 
 // Module-level cache to prevent duplicate fetches across StrictMode remounts
@@ -105,7 +106,7 @@ function SubscriptionPageContent() {
           const supabase = createClient();
           const { data: profile } = await supabase
             .from('user_profiles')
-            .select('subscriptionStatus, subscriptionCurrentPeriodEnd')
+            .select('subscriptionStatus, subscriptionCurrentPeriodEnd, subscriptionPriceId')
             .eq('id', userId)
             .single();
 
@@ -161,6 +162,12 @@ function SubscriptionPageContent() {
         month: 'long',
         day: 'numeric'
       })
+    : null;
+  
+  // Determine subscription billing interval
+  const isYearlySubscription = subscriptionData?.subscriptionPriceId === PRICE_IDS.yearly;
+  const subscriptionInterval = subscriptionData?.subscriptionPriceId 
+    ? (isYearlySubscription ? 'Yearly' : 'Monthly')
     : null;
 
   return (
@@ -269,90 +276,75 @@ function SubscriptionPageContent() {
             </div>
           )}
 
-          {/* Pricing Cards */}
-          <div className="grid sm:grid-cols-2 gap-4 sm:gap-6 max-w-4xl mx-auto">
-            {/* Free Plan */}
-            <div className="bg-slate-900/30 backdrop-blur border border-slate-800 rounded-2xl p-6 relative">
-              <h3 className="text-xl font-bold text-white mb-2">{PLANS.free.name}</h3>
-              <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-bold text-white">$0</span>
-                <span className="text-slate-400">/month</span>
-              </div>
-              
-              <ul className="space-y-3 mb-6">
-                {PLANS.free.features.map((feature, i) => (
-                  <li key={i} className="flex items-center gap-2 text-slate-300">
-                    <Check className="w-4 h-4 text-slate-500" />
-                    {feature}
-                  </li>
-                ))}
-                {PLANS.free.limitations.map((limitation, i) => (
-                  <li key={i} className="flex items-center gap-2 text-slate-500">
-                    <div className="w-4 h-4 flex items-center justify-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
-                    </div>
-                    {limitation}
-                  </li>
-                ))}
-              </ul>
+          {/* Pricing Cards - Only show when not premium */}
+          {!isPremium && (
+            <div className="grid sm:grid-cols-2 gap-4 sm:gap-6 max-w-4xl mx-auto">
+              {/* Free Plan */}
+              <div className="bg-slate-900/30 backdrop-blur border border-slate-800 rounded-2xl p-6 relative">
+                <h3 className="text-xl font-bold text-white mb-2">{PLANS.free.name}</h3>
+                <div className="flex items-baseline gap-1 mb-6">
+                  <span className="text-4xl font-bold text-white">$0</span>
+                  <span className="text-slate-400">/month</span>
+                </div>
+                
+                <ul className="space-y-3 mb-6">
+                  {PLANS.free.features.map((feature, i) => (
+                    <li key={i} className="flex items-center gap-2 text-slate-300">
+                      <Check className="w-4 h-4 text-slate-500" />
+                      {feature}
+                    </li>
+                  ))}
+                  {PLANS.free.limitations.map((limitation, i) => (
+                    <li key={i} className="flex items-center gap-2 text-slate-500">
+                      <div className="w-4 h-4 flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+                      </div>
+                      {limitation}
+                    </li>
+                  ))}
+                </ul>
 
-              <button
-                disabled
-                className="w-full py-3 rounded-xl bg-slate-800 text-slate-400 font-medium cursor-not-allowed"
-              >
-                Current Plan
-              </button>
-            </div>
-
-            {/* Pro Plan */}
-            <div className="bg-gradient-to-b from-purple-900/30 to-slate-900/50 backdrop-blur border border-purple-500/30 rounded-2xl p-6 relative overflow-hidden">
-              <div className="absolute top-0 right-0 px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-medium rounded-bl-xl">
-                Most Popular
-              </div>
-              
-              <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
-                {PLANS.pro.name}
-                <Crown className="w-5 h-5 text-yellow-400" />
-              </h3>
-              <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-bold text-white">
-                  ${billingCycle === 'yearly' 
-                    ? (PLANS.pro.yearlyPrice / 12).toFixed(2) 
-                    : PLANS.pro.monthlyPrice.toFixed(2)}
-                </span>
-                <span className="text-slate-400">/month</span>
-                {billingCycle === 'yearly' && (
-                  <span className="ml-2 text-sm text-slate-500 line-through">
-                    ${PLANS.pro.monthlyPrice}/mo
-                  </span>
-                )}
-              </div>
-              
-              <ul className="space-y-3 mb-6">
-                {PLANS.pro.features.map((feature, i) => (
-                  <li key={i} className="flex items-center gap-2 text-slate-200">
-                    <Check className="w-4 h-4 text-purple-400" />
-                    {feature}
-                  </li>
-                ))}
-              </ul>
-
-              {isPremium ? (
                 <button
-                  onClick={handleManageSubscription}
-                  disabled={portalLoading}
-                  className="w-full py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-medium transition-all flex items-center justify-center gap-2"
+                  disabled
+                  className="w-full py-3 rounded-xl bg-slate-800 text-slate-400 font-medium cursor-not-allowed"
                 >
-                  {portalLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <>
-                      <Settings className="w-4 h-4" />
-                      Manage Subscription
-                    </>
-                  )}
+                  Current Plan
                 </button>
-              ) : (
+              </div>
+
+              {/* Pro Plan */}
+              <div className="bg-gradient-to-b from-purple-900/30 to-slate-900/50 backdrop-blur border border-purple-500/30 rounded-2xl p-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 px-3 py-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-medium rounded-bl-xl">
+                  Most Popular
+                </div>
+                
+                <h3 className="text-xl font-bold text-white mb-2 flex items-center gap-2">
+                  {PLANS.pro.name}
+                  <Crown className="w-5 h-5 text-yellow-400" />
+                </h3>
+                <div className="flex items-baseline gap-1 mb-6">
+                  <span className="text-4xl font-bold text-white">
+                    ${billingCycle === 'yearly' 
+                      ? (PLANS.pro.yearlyPrice / 12).toFixed(2) 
+                      : PLANS.pro.monthlyPrice.toFixed(2)}
+                  </span>
+                  <span className="text-slate-400">/month</span>
+                  {billingCycle === 'yearly' && (
+                    <span className="ml-2 text-sm text-slate-500 line-through">
+                      ${PLANS.pro.monthlyPrice}/mo
+                    </span>
+                  )}
+                </div>
+                
+                <ul className="space-y-3 mb-6">
+                  {PLANS.pro.features.map((feature, i) => (
+                    <li key={i} className="flex items-center gap-2 text-slate-200">
+                      <Check className="w-4 h-4 text-purple-400" />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+
                 <button
                   onClick={() => handleSubscribe(
                     billingCycle === 'yearly' ? PRICE_IDS.yearly : PRICE_IDS.monthly
@@ -369,15 +361,15 @@ function SubscriptionPageContent() {
                     </>
                   )}
                 </button>
-              )}
 
-              {billingCycle === 'yearly' && !isPremium && (
-                <p className="text-center text-sm text-slate-400 mt-3">
-                  Billed annually at ${PLANS.pro.yearlyPrice}
-                </p>
-              )}
+                {billingCycle === 'yearly' && (
+                  <p className="text-center text-sm text-slate-400 mt-3">
+                    Billed annually at ${PLANS.pro.yearlyPrice}
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Subscription Management for Pro Users */}
           {isPremium && (
@@ -394,6 +386,14 @@ function SubscriptionPageContent() {
                       {subscriptionData?.subscriptionStatus || 'Active'}
                     </span>
                   </div>
+                  {subscriptionInterval && (
+                    <div className="flex items-center justify-between py-2 border-b border-slate-800">
+                      <span className="text-slate-400">Plan</span>
+                      <span className="text-white font-medium">
+                        {subscriptionInterval} Subscription
+                      </span>
+                    </div>
+                  )}
                   {periodEnd && (
                     <div className="flex items-center justify-between py-2 border-b border-slate-800">
                       <span className="text-slate-400">Next billing date</span>

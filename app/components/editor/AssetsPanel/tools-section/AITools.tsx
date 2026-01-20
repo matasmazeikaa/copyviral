@@ -344,6 +344,11 @@ export default function AITools() {
     } catch (error: any) {
       console.error("Error importing reference video:", error);
       
+      // Check if it's a 403 error (limit reached)
+      const isLimitReached = error?.status === 403 || 
+        error?.message?.includes("limit reached") ||
+        error?.message?.includes("upgrade to Pro");
+      
       // Check if it's a 503 error (model overloaded)
       const isOverloaded = 
         error?.error?.code === 503 ||
@@ -351,7 +356,9 @@ export default function AITools() {
         error?.message?.includes("overloaded") ||
         error?.error?.message?.includes("overloaded");
       
-      if (isOverloaded) {
+      if (isLimitReached) {
+        setShowUpgradeModal(true);
+      } else if (isOverloaded) {
         toast.error("The AI model is currently overloaded. Please try again in a few moments.", {
           duration: 5000,
         });
@@ -437,13 +444,23 @@ export default function AITools() {
 
       // Clear the URL input
       setReferenceUrl("");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error importing from URL:", error);
-      alert(
-        error instanceof Error
-          ? error.message
-          : "Failed to import video from URL"
-      );
+      
+      // Check if it's a limit reached error (403)
+      const isLimitReached = error?.status === 403 || 
+        error?.message?.includes("limit reached") ||
+        error?.message?.includes("upgrade to Pro");
+      
+      if (isLimitReached) {
+        setShowUpgradeModal(true);
+      } else {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Failed to import video from URL"
+        );
+      }
     } finally {
       setIsImporting(false);
     }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/app/utils/supabase/server';
 
+const FREE_TIER_LIMIT = 3;
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
@@ -12,14 +14,24 @@ export async function POST(request: NextRequest) {
 
     const { generationType, metadata } = await request.json();
 
-    // Get current profile
+    // Get current profile with subscription status
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('aiGenerationsUsed')
+      .select('aiGenerationsUsed, subscriptionStatus')
       .eq('id', user.id)
       .single();
 
     const currentUsage = profile?.aiGenerationsUsed || 0;
+    const subscriptionStatus = profile?.subscriptionStatus || 'free';
+    const isPremium = subscriptionStatus === 'active';
+
+    // Check if user can generate (block if at or over limit for free users)
+    if (!isPremium && currentUsage >= FREE_TIER_LIMIT) {
+      return NextResponse.json(
+        { error: 'AI generation limit reached. Please upgrade to Pro for unlimited generations.' },
+        { status: 403 }
+      );
+    }
 
     // Update usage count
     await supabase

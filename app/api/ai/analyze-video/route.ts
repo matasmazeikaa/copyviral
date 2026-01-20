@@ -308,6 +308,8 @@ const runSingleAnalysis = async (
   return JSON.parse(jsonText);
 };
 
+const FREE_TIER_LIMIT = 3;
+
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
@@ -318,6 +320,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Unauthorized" },
         { status: 401 }
+      );
+    }
+
+    // Check AI usage limits before processing
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('subscriptionStatus, aiGenerationsUsed')
+      .eq('id', user.id)
+      .single();
+
+    const subscriptionStatus = profile?.subscriptionStatus || 'free';
+    const aiGenerationsUsed = profile?.aiGenerationsUsed || 0;
+    const isPremium = subscriptionStatus === 'active';
+
+    if (!isPremium && aiGenerationsUsed >= FREE_TIER_LIMIT) {
+      return NextResponse.json(
+        { error: "AI generation limit reached. Please upgrade to Pro for unlimited generations." },
+        { status: 403 }
       );
     }
 
