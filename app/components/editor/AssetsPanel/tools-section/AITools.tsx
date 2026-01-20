@@ -11,7 +11,6 @@ import { Link, Loader2, Sparkles, Upload, Crown, Lock, Wand2, Brain, Zap, Eye, S
 import { DEFAULT_TEXT_STYLE } from "@/app/constants";
 import { storeFile } from "@/app/store";
 import { useAuth } from "@/app/contexts/AuthContext";
-import { incrementAIUsage } from "@/app/services/subscriptionService";
 import UpgradeModal from "@/app/components/UpgradeModal";
 
 // AI Loading Modal Component
@@ -223,9 +222,8 @@ export default function AITools() {
       
       setLoadingStage('processing');
       
-      // Increment AI usage after successful generation
-      await incrementAIUsage('video_analysis', { fileName: file.name });
-      await refreshUsage(true); // Force refresh to get updated usage count
+      // Refresh usage count (backend already incremented during analysis)
+      await refreshUsage(true);
 
       // Store the video file for audio extraction
       const audioFileId = crypto.randomUUID();

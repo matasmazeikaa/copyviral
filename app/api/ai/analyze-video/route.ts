@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI, Type } from "@google/genai";
-import { createClient } from "@/app/utils/supabase/server";
+import { createClient, createAdminClient } from "@/app/utils/supabase/server";
 
 const apiKey = process.env.GEMINI_API_KEY;
 
@@ -483,15 +483,20 @@ export async function POST(request: NextRequest) {
     });
 
     // Increment AI generation usage for non-premium users
+    // Use admin client to bypass RLS restrictions on aiGenerationsUsed
     if (!isPremium) {
-      await supabase
+      const adminClient = createAdminClient();
+      const { error: updateError } = await adminClient
         .from('user_profiles')
-        .upsert({
-          id: user.id,
-          email: user.email,
+        .update({
           aiGenerationsUsed: aiGenerationsUsed + 1,
           updatedAt: new Date().toISOString(),
-        });
+        })
+        .eq('id', user.id);
+      
+      if (updateError) {
+        console.error('Failed to increment AI usage:', updateError);
+      }
     }
 
     return NextResponse.json({
