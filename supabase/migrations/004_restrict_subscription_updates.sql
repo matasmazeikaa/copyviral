@@ -1,4 +1,4 @@
--- Migration: Restrict user_profiles update policy to prevent subscription manipulation
+ -- Migration: Restrict user_profiles update policy to prevent subscription manipulation
 -- Users should NOT be able to modify subscription-related fields directly
 
 -- ============================================

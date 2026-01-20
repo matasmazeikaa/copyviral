@@ -482,6 +482,18 @@ export async function POST(request: NextRequest) {
       settings: { videoMode: finalMode, videoScale },
     });
 
+    // Increment AI generation usage for non-premium users
+    if (!isPremium) {
+      await supabase
+        .from('user_profiles')
+        .upsert({
+          id: user.id,
+          email: user.email,
+          aiGenerationsUsed: aiGenerationsUsed + 1,
+          updatedAt: new Date().toISOString(),
+        });
+    }
+
     return NextResponse.json({
       durations: durations.length > 0 ? durations : [2, 2, 2],
       textLayers: mappedLayers,
