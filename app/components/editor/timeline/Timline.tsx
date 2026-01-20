@@ -28,6 +28,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
     // Video dragging state (pointer-based for mobile support)
     const [draggingVideoItem, setDraggingVideoItem] = useState<{id: string, startPosition: number} | null>(null);
     const [videoDragStartPos, setVideoDragStartPos] = useState<{x: number, y: number, clipId: string} | null>(null);
+    const [videoDragOffset, setVideoDragOffset] = useState<number>(0); // Visual offset in pixels during drag
     const draggingVideoItemRef = useRef<{id: string, startPosition: number} | null>(null);
     const startXRef = useRef<number>(0);
     const startValueRef = useRef<number>(0);
@@ -109,20 +110,11 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         }
     }, []);
     
-    // Cleanup auto-scroll and animation frames on unmount
+    // Cleanup auto-scroll on unmount
     useEffect(() => {
         return () => {
             if (autoScrollRef.current !== null) {
                 cancelAnimationFrame(autoScrollRef.current);
-            }
-            if (videoDragAnimationRef.current !== null) {
-                cancelAnimationFrame(videoDragAnimationRef.current);
-            }
-            if (audioDragAnimationRef.current !== null) {
-                cancelAnimationFrame(audioDragAnimationRef.current);
-            }
-            if (textDragAnimationRef.current !== null) {
-                cancelAnimationFrame(textDragAnimationRef.current);
             }
         };
     }, []);
@@ -666,11 +658,12 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                     )));
                 }
             }
-        }, 50), [resizingItem, dispatch, fps, timelineZoom, snapTime]);
+        }, 33), [resizingItem, dispatch, fps, timelineZoom, snapTime]);
 
     const handleResizeMove = (e: React.PointerEvent) => {
         if (!resizingItem) return;
         e.stopPropagation();
+        e.preventDefault(); // Prevent scroll during resize
         mouseXRef.current = e.clientX;
         // Update pointer position for auto-scroll
         lastPointerXRef.current = e.clientX;
@@ -693,10 +686,13 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
     };
 
-    const mouseXTextDragRef = useRef<number>(0);
-    const textDragAnimationRef = useRef<number | null>(null);
-    
-    const performTextDragUpdate = useCallback(() => {
+    const lastTextDragUpdateRef = useRef<number>(0);
+    const updateTextDrag = useCallback((clientX: number) => {
+        // Throttle to ~30fps (33ms)
+        const now = Date.now();
+        if (now - lastTextDragUpdateRef.current < 33) return;
+        lastTextDragUpdateRef.current = now;
+        
         const currentDraggingItem = draggingTextItemRef.current;
         if (!currentDraggingItem) return;
         
@@ -704,7 +700,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         const layer = currentElements.find(l => l.id === currentDraggingItem.id);
         if (!layer) return;
 
-        const deltaX = mouseXTextDragRef.current - startXRef.current;
+        const deltaX = clientX - startXRef.current;
         const deltaSeconds = deltaX / timelineZoom;
         const newPositionStart = Math.max(0, currentDraggingItem.startPosition + deltaSeconds);
         const duration = layer.positionEnd - layer.positionStart;
@@ -719,18 +715,11 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                 : t
         )));
     }, [dispatch, timelineZoom, snapTime]);
-    
-    const scheduleTextDragUpdate = useCallback(() => {
-        if (textDragAnimationRef.current !== null) return;
-        textDragAnimationRef.current = requestAnimationFrame(() => {
-            textDragAnimationRef.current = null;
-            performTextDragUpdate();
-        });
-    }, [performTextDragUpdate]);
 
     const handleTextDragMove = (e: React.PointerEvent) => {
         if (!textDragStartPos) return;
         e.stopPropagation();
+        e.preventDefault(); // Prevent scroll during drag
         
         // Update pointer position for auto-scroll
         lastPointerXRef.current = e.clientX;
@@ -749,8 +738,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         }
         
         if (draggingTextItem) {
-            mouseXTextDragRef.current = e.clientX;
-            scheduleTextDragUpdate();
+            updateTextDrag(e.clientX);
         }
     };
 
@@ -770,10 +758,13 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
     };
 
-    const mouseXAudioDragRef = useRef<number>(0);
-    const audioDragAnimationRef = useRef<number | null>(null);
-    
-    const performAudioDragUpdate = useCallback(() => {
+    const lastAudioDragUpdateRef = useRef<number>(0);
+    const updateAudioDrag = useCallback((clientX: number) => {
+        // Throttle to ~30fps (33ms)
+        const now = Date.now();
+        if (now - lastAudioDragUpdateRef.current < 33) return;
+        lastAudioDragUpdateRef.current = now;
+        
         const currentDraggingItem = draggingAudioItemRef.current;
         if (!currentDraggingItem) return;
         
@@ -781,7 +772,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         const clip = currentFiles.find(c => c.id === currentDraggingItem.id);
         if (!clip) return;
 
-        const deltaX = mouseXAudioDragRef.current - startXRef.current;
+        const deltaX = clientX - startXRef.current;
         const deltaSeconds = deltaX / timelineZoom;
         const newPositionStart = Math.max(0, currentDraggingItem.startPosition + deltaSeconds);
         const duration = clip.positionEnd - clip.positionStart;
@@ -797,18 +788,11 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                 : m
         )));
     }, [dispatch, timelineZoom, snapTime]);
-    
-    const scheduleAudioDragUpdate = useCallback(() => {
-        if (audioDragAnimationRef.current !== null) return;
-        audioDragAnimationRef.current = requestAnimationFrame(() => {
-            audioDragAnimationRef.current = null;
-            performAudioDragUpdate();
-        });
-    }, [performAudioDragUpdate]);
 
     const handleAudioDragMove = (e: React.PointerEvent) => {
         if (!audioDragStartPos) return;
         e.stopPropagation();
+        e.preventDefault(); // Prevent scroll during drag
         
         // Update pointer position for auto-scroll
         lastPointerXRef.current = e.clientX;
@@ -827,8 +811,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         }
         
         if (draggingAudioItem) {
-            mouseXAudioDragRef.current = e.clientX;
-            scheduleAudioDragUpdate();
+            updateAudioDrag(e.clientX);
         }
     };
 
@@ -848,21 +831,23 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
     };
 
-    const mouseXVideoDragRef = useRef<number>(0);
-    const videoDragAnimationRef = useRef<number | null>(null);
+    // Video drag just updates visual offset - no heavy calculations during drag
+    const updateVideoDragOffset = useCallback((clientX: number) => {
+        const deltaX = clientX - startXRef.current;
+        setVideoDragOffset(deltaX);
+    }, []);
     
-    const performVideoDragUpdate = useCallback(() => {
+    // Commit video reorder on drag end
+    const commitVideoDrag = useCallback(() => {
         const currentDraggingItem = draggingVideoItemRef.current;
-        if (!currentDraggingItem) return;
+        if (!currentDraggingItem || videoDragOffset === 0) return;
         
         const currentFiles = mediaFilesRef.current;
         const clip = currentFiles.find(c => c.id === currentDraggingItem.id);
         if (!clip) return;
 
-        const deltaX = mouseXVideoDragRef.current - startXRef.current;
-        const deltaSeconds = deltaX / timelineZoom;
+        const deltaSeconds = videoDragOffset / timelineZoom;
         const newPositionStart = Math.max(0, currentDraggingItem.startPosition + deltaSeconds);
-        const clipDuration = clip.positionEnd - clip.positionStart;
 
         // Get all video clips sorted by position
         const videoClips = currentFiles
@@ -916,27 +901,13 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
             });
 
             dispatch(setMediaFiles(updatedMediaFiles));
-            
-            // Update the start position reference for the next drag update
-            const newClip = updatedClips.find(c => c.id === clip.id);
-            if (newClip) {
-                startXRef.current = mouseXVideoDragRef.current;
-                setDraggingVideoItem({ id: clip.id, startPosition: newClip.positionStart });
-            }
         }
-    }, [dispatch, timelineZoom]);
-    
-    const scheduleVideoDragUpdate = useCallback(() => {
-        if (videoDragAnimationRef.current !== null) return;
-        videoDragAnimationRef.current = requestAnimationFrame(() => {
-            videoDragAnimationRef.current = null;
-            performVideoDragUpdate();
-        });
-    }, [performVideoDragUpdate]);
+    }, [dispatch, timelineZoom, videoDragOffset]);
 
     const handleVideoDragMove = (e: React.PointerEvent) => {
         if (!videoDragStartPos) return;
         e.stopPropagation();
+        e.preventDefault(); // Prevent scroll during drag
         
         // Update pointer position for auto-scroll
         lastPointerXRef.current = e.clientX;
@@ -955,14 +926,19 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         }
         
         if (draggingVideoItem) {
-            mouseXVideoDragRef.current = e.clientX;
-            scheduleVideoDragUpdate();
+            // Just update visual offset - no heavy calculations
+            updateVideoDragOffset(e.clientX);
         }
     };
 
     const handleVideoDragEnd = (e: React.PointerEvent) => {
+        // Commit the reorder on drop
+        if (draggingVideoItem) {
+            commitVideoDrag();
+        }
         setDraggingVideoItem(null);
         setVideoDragStartPos(null);
+        setVideoDragOffset(0);
         stopAutoScroll();
         (e.target as Element).releasePointerCapture(e.pointerId);
     };
@@ -1186,7 +1162,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                         <div
                                             key={clip.id}
                                             className={`timeline-clip group relative h-14 rounded-lg border overflow-hidden select-none touch-none
-                                                ${isDraggingVideo ? 'opacity-80 ring-2 ring-purple-400 z-30 scale-[1.02]' : ''}
+                                                ${isDraggingVideo ? 'opacity-90 ring-2 ring-purple-400 z-30 shadow-xl' : ''}
                                                 ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'border-2 border-purple-400 z-20 shadow-lg shadow-purple-500/20' : 'border-slate-600'}
                                             `}
                                             style={{ 
@@ -1194,7 +1170,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                                 left: `${clip.positionStart * timelineZoom}px`,
                                                 position: 'absolute',
                                                 background: 'linear-gradient(135deg, #334155 0%, #1e293b 50%, #0f172a 100%)',
-                                                transition: isDraggingVideo ? 'none' : 'transform 0.15s ease-out, left 0.1s ease-out',
+                                                transform: isDraggingVideo ? `translateX(${videoDragOffset}px)` : 'none',
                                             }}
                                             onPointerDown={(e) => {
                                                 e.stopPropagation();
@@ -1251,14 +1227,13 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                             <div 
                                                 key={clip.id}
                                                 className={`timeline-clip relative h-6 bg-gradient-to-r from-blue-900/60 to-blue-800/40 rounded-md border overflow-hidden touch-none select-none
-                                                    ${draggingAudioItem?.id === clip.id ? 'opacity-80 ring-2 ring-blue-400 z-30 scale-[1.02]' : ''}
+                                                    ${draggingAudioItem?.id === clip.id ? 'opacity-90 ring-2 ring-blue-400 z-30' : ''}
                                                     ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'border-blue-400 border-2' : 'border-blue-500/30'}
                                                 `}
                                                 style={{ 
                                                     width: `${audioWidth}px`, 
                                                     left: `${clip.positionStart * timelineZoom}px`, 
                                                     position: 'absolute',
-                                                    transition: draggingAudioItem?.id === clip.id ? 'none' : 'transform 0.15s ease-out, left 0.1s ease-out',
                                                 }}
                                                 onPointerDown={(e) => {
                                                     e.stopPropagation();
@@ -1288,13 +1263,12 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                         <div
                                             key={layer.id}
                                             className={`timeline-clip absolute h-5 rounded-md border flex items-center px-1.5 touch-none select-none
-                                                ${draggingTextItem?.id === layer.id ? 'opacity-80 ring-2 ring-purple-400 z-30 scale-[1.02]' : ''}
+                                                ${draggingTextItem?.id === layer.id ? 'opacity-90 ring-2 ring-purple-400 z-30' : ''}
                                                 ${activeElement === 'text' && textElements[activeElementIndex]?.id === layer.id ? 'bg-purple-600 border-purple-400 border-2' : 'bg-gradient-to-r from-purple-900/60 to-purple-800/40 border-purple-500/30'}
                                             `}
                                             style={{
                                                 left: `${layer.positionStart * timelineZoom}px`,
                                                 width: `${Math.max(textWidth, 28)}px`,
-                                                transition: draggingTextItem?.id === layer.id ? 'none' : 'transform 0.15s ease-out, left 0.1s ease-out',
                                             }}
                                             onPointerDown={(e) => {
                                                 e.stopPropagation();
@@ -1558,8 +1532,8 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                 return (
                                     <div
                                         key={clip.id}
-                                        className={`group relative h-24 bg-slate-800 rounded-md border overflow-hidden select-none transition-transform active:cursor-grabbing cursor-grab touch-none
-                                            ${isDraggingVideo ? 'opacity-70 scale-[0.98] ring-2 ring-blue-400 z-30' : 'opacity-100'}
+                                        className={`group relative h-24 bg-slate-800 rounded-md border overflow-hidden select-none active:cursor-grabbing cursor-grab touch-none
+                                            ${isDraggingVideo ? 'opacity-90 ring-2 ring-blue-400 z-30 shadow-xl' : 'opacity-100'}
                                             ${resizingItem?.id === clip.id ? 'ring-2 ring-blue-500 z-20 border-blue-500' : ''}
                                             ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'border-2 border-white z-20 shadow-lg shadow-white/20' : 'border border-slate-600 hover:border-slate-400'}
                                         `}
@@ -1568,7 +1542,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                             left: `${clip.positionStart * timelineZoom}px`,
                                             position: 'absolute',
                                             zIndex: isDraggingVideo ? 30 : (activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 20 : 10),
-                                            transition: (resizingItem?.id === clip.id || isDraggingVideo) ? 'none' : 'width 0.1s ease-out, left 0.1s ease-out, transform 0.2s'
+                                            transform: isDraggingVideo ? `translateX(${videoDragOffset}px)` : 'none',
                                         }}
                                         onPointerDown={(e) => {
                                             e.stopPropagation();
