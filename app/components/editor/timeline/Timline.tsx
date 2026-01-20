@@ -28,7 +28,8 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
     // Video dragging state (pointer-based for mobile support)
     const [draggingVideoItem, setDraggingVideoItem] = useState<{id: string, startPosition: number} | null>(null);
     const [videoDragStartPos, setVideoDragStartPos] = useState<{x: number, y: number, clipId: string} | null>(null);
-    const [videoDragOffset, setVideoDragOffset] = useState<number>(0); // Visual offset in pixels during drag
+    const videoDragOffsetRef = useRef<number>(0); // Visual offset in pixels during drag (using ref for performance)
+    const [, forceRender] = useState(0); // Force re-render for visual update
     const draggingVideoItemRef = useRef<{id: string, startPosition: number} | null>(null);
     const startXRef = useRef<number>(0);
     const startValueRef = useRef<number>(0);
@@ -822,31 +823,30 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         (e.target as Element).releasePointerCapture(e.pointerId);
     };
 
-    // Video drag handlers (pointer-based for mobile support)
+    // Video drag handlers (using window events for reliable mobile support)
     const handleVideoDragStart = (e: React.PointerEvent, clip: MediaFile) => {
         e.preventDefault();
         e.stopPropagation();
         setVideoDragStartPos({ x: e.clientX, y: e.clientY, clipId: clip.id });
         startXRef.current = e.clientX;
-        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        videoDragOffsetRef.current = 0;
     };
 
-    // Video drag just updates visual offset - no heavy calculations during drag
-    const updateVideoDragOffset = useCallback((clientX: number) => {
-        const deltaX = clientX - startXRef.current;
-        setVideoDragOffset(deltaX);
-    }, []);
-    
-    // Commit video reorder on drag end
-    const commitVideoDrag = useCallback(() => {
+    // Update video drag - reorder when crossing midpoints
+    const updateVideoDrag = useCallback((clientX: number) => {
         const currentDraggingItem = draggingVideoItemRef.current;
-        if (!currentDraggingItem || videoDragOffset === 0) return;
+        if (!currentDraggingItem) return;
         
         const currentFiles = mediaFilesRef.current;
         const clip = currentFiles.find(c => c.id === currentDraggingItem.id);
         if (!clip) return;
 
-        const deltaSeconds = videoDragOffset / timelineZoom;
+        // Calculate visual offset
+        const deltaX = clientX - startXRef.current;
+        videoDragOffsetRef.current = deltaX;
+        
+        // Calculate where the clip would be
+        const deltaSeconds = deltaX / timelineZoom;
         const newPositionStart = Math.max(0, currentDraggingItem.startPosition + deltaSeconds);
 
         // Get all video clips sorted by position
@@ -901,46 +901,72 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
             });
 
             dispatch(setMediaFiles(updatedMediaFiles));
-        }
-    }, [dispatch, timelineZoom, videoDragOffset]);
-
-    const handleVideoDragMove = (e: React.PointerEvent) => {
-        if (!videoDragStartPos) return;
-        e.stopPropagation();
-        e.preventDefault(); // Prevent scroll during drag
-        
-        // Update pointer position for auto-scroll
-        lastPointerXRef.current = e.clientX;
-        
-        const deltaX = Math.abs(e.clientX - videoDragStartPos.x);
-        const deltaY = Math.abs(e.clientY - videoDragStartPos.y);
-        const DRAG_THRESHOLD = 5; // pixels
-        
-        // Only start dragging if user has moved enough
-        if (!draggingVideoItem && (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD)) {
-            const clip = mediaFilesRef.current.find(c => c.id === videoDragStartPos.clipId);
-            if (clip) {
-                setDraggingVideoItem({ id: clip.id, startPosition: clip.positionStart });
-                startAutoScroll();
+            
+            // Reset drag reference after reorder
+            const newClip = updatedClips.find(c => c.id === clip.id);
+            if (newClip) {
+                startXRef.current = clientX;
+                videoDragOffsetRef.current = 0;
+                setDraggingVideoItem({ id: clip.id, startPosition: newClip.positionStart });
             }
+        } else {
+            // Just update visual - force re-render for transform
+            forceRender(n => n + 1);
         }
+    }, [dispatch, timelineZoom]);
+
+    // Window-level event handlers for video drag (more reliable on mobile)
+    useEffect(() => {
+        if (!videoDragStartPos) return;
         
-        if (draggingVideoItem) {
-            // Just update visual offset - no heavy calculations
-            updateVideoDragOffset(e.clientX);
-        }
+        const handleGlobalMove = (e: PointerEvent) => {
+            e.preventDefault();
+            
+            const deltaX = Math.abs(e.clientX - videoDragStartPos.x);
+            const deltaY = Math.abs(e.clientY - videoDragStartPos.y);
+            const DRAG_THRESHOLD = 5;
+            
+            // Start dragging if moved enough
+            if (!draggingVideoItemRef.current && (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD)) {
+                const clip = mediaFilesRef.current.find(c => c.id === videoDragStartPos.clipId);
+                if (clip) {
+                    setDraggingVideoItem({ id: clip.id, startPosition: clip.positionStart });
+                    startAutoScroll();
+                }
+            }
+            
+            if (draggingVideoItemRef.current) {
+                lastPointerXRef.current = e.clientX;
+                updateVideoDrag(e.clientX);
+            }
+        };
+        
+        const handleGlobalUp = () => {
+            setDraggingVideoItem(null);
+            setVideoDragStartPos(null);
+            videoDragOffsetRef.current = 0;
+            forceRender(n => n + 1);
+            stopAutoScroll();
+        };
+        
+        window.addEventListener('pointermove', handleGlobalMove, { passive: false });
+        window.addEventListener('pointerup', handleGlobalUp);
+        window.addEventListener('pointercancel', handleGlobalUp);
+        
+        return () => {
+            window.removeEventListener('pointermove', handleGlobalMove);
+            window.removeEventListener('pointerup', handleGlobalUp);
+            window.removeEventListener('pointercancel', handleGlobalUp);
+        };
+    }, [videoDragStartPos, updateVideoDrag, startAutoScroll, stopAutoScroll]);
+
+    // Legacy handlers for container-level events (kept for compatibility)
+    const handleVideoDragMove = (e: React.PointerEvent) => {
+        // Now handled by window events
     };
 
     const handleVideoDragEnd = (e: React.PointerEvent) => {
-        // Commit the reorder on drop
-        if (draggingVideoItem) {
-            commitVideoDrag();
-        }
-        setDraggingVideoItem(null);
-        setVideoDragStartPos(null);
-        setVideoDragOffset(0);
-        stopAutoScroll();
-        (e.target as Element).releasePointerCapture(e.pointerId);
+        // Now handled by window events
     };
 
     // Mobile: Track if we're currently scrolling (to prevent scroll/time update loops)
@@ -1170,7 +1196,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                                 left: `${clip.positionStart * timelineZoom}px`,
                                                 position: 'absolute',
                                                 background: 'linear-gradient(135deg, #334155 0%, #1e293b 50%, #0f172a 100%)',
-                                                transform: isDraggingVideo ? `translateX(${videoDragOffset}px)` : 'none',
+                                                transform: isDraggingVideo ? `translateX(${videoDragOffsetRef.current}px)` : 'none',
                                             }}
                                             onPointerDown={(e) => {
                                                 e.stopPropagation();
@@ -1542,7 +1568,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                             left: `${clip.positionStart * timelineZoom}px`,
                                             position: 'absolute',
                                             zIndex: isDraggingVideo ? 30 : (activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 20 : 10),
-                                            transform: isDraggingVideo ? `translateX(${videoDragOffset}px)` : 'none',
+                                            transform: isDraggingVideo ? `translateX(${videoDragOffsetRef.current}px)` : 'none',
                                         }}
                                         onPointerDown={(e) => {
                                             e.stopPropagation();
