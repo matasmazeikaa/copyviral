@@ -42,13 +42,14 @@ export async function POST(request: Request): Promise<NextResponse<StartRenderRe
         }
         
         // Check if user is premium (for watermark logic and storage limit)
-        const { data: subscription } = await supabase
-            .from('subscriptions')
-            .select('status')
-            .eq('user_id', user.id)
+        // Use user_profiles.subscriptionStatus as the source of truth (same as check-usage endpoint)
+        const { data: profile } = await supabase
+            .from('user_profiles')
+            .select('subscriptionStatus')
+            .eq('id', user.id)
             .single();
         
-        const isPremium = subscription?.status === 'active';
+        const isPremium = profile?.subscriptionStatus === 'active';
         const storageLimit = isPremium ? STORAGE_LIMITS.pro : STORAGE_LIMITS.free;
         
         // Check storage limit before allowing render
