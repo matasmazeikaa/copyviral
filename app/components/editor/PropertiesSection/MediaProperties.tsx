@@ -159,6 +159,107 @@ export default function MediaProperties({ editAll = false }: MediaPropertiesProp
                         </div>
                     </div>
                 </div> */}
+                {/* Image Position & Size Properties */}
+                {mediaFile.type === "image" && (
+                    <div className="space-y-4">
+                        {/* Scale Control */}
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <label className="text-sm font-medium text-white">Scale</label>
+                                <span className="text-sm text-blue-400 font-bold">
+                                    {(() => {
+                                        const origW = mediaFile.originalWidth || mediaFile.width || 100;
+                                        const currentW = mediaFile.width || origW;
+                                        return Math.round((currentW / origW) * 100);
+                                    })()}%
+                                </span>
+                            </div>
+                            <input
+                                type="range"
+                                min="10"
+                                max="200"
+                                step="1"
+                                value={(() => {
+                                    const origW = mediaFile.originalWidth || mediaFile.width || 100;
+                                    const currentW = mediaFile.width || origW;
+                                    return Math.round((currentW / origW) * 100);
+                                })()}
+                                onChange={(e) => {
+                                    const scalePercent = Number(e.target.value);
+                                    const origW = mediaFile.originalWidth || mediaFile.width || 100;
+                                    const origH = mediaFile.originalHeight || mediaFile.height || 100;
+                                    const newWidth = Math.round((scalePercent / 100) * origW);
+                                    const newHeight = Math.round((scalePercent / 100) * origH);
+                                    
+                                    // Recenter the image
+                                    const canvasWidth = 1080;
+                                    const canvasHeight = 1920;
+                                    const newX = (canvasWidth - newWidth) / 2;
+                                    const newY = (canvasHeight - newHeight) / 2;
+                                    
+                                    onUpdateMedia(mediaFile.id, { 
+                                        width: newWidth,
+                                        height: newHeight,
+                                        x: newX,
+                                        y: newY,
+                                        crop: { x: 0, y: 0, width: newWidth, height: newHeight }
+                                    });
+                                }}
+                                className="w-full h-2 rounded-lg appearance-none cursor-pointer bg-slate-700"
+                            />
+                            <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                                <span>10%</span>
+                                <span className="font-bold text-slate-300">100%</span>
+                                <span>200%</span>
+                            </div>
+                        </div>
+
+                        {/* Position Control */}
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-white">Position</label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs text-slate-400 mb-1">X</label>
+                                    <input
+                                        type="number"
+                                        step="10"
+                                        value={Math.round(mediaFile.x || 0)}
+                                        onChange={(e) => onUpdateMedia(mediaFile.id, { x: Number(e.target.value) })}
+                                        className="w-full px-3 py-2 text-sm bg-slate-800 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs text-slate-400 mb-1">Y</label>
+                                    <input
+                                        type="number"
+                                        step="10"
+                                        value={Math.round(mediaFile.y || 0)}
+                                        onChange={(e) => onUpdateMedia(mediaFile.id, { y: Number(e.target.value) })}
+                                        className="w-full px-3 py-2 text-sm bg-slate-800 border border-slate-600 text-white rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Opacity Control */}
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <label className="text-sm font-medium text-white">Opacity</label>
+                                <span className="text-sm text-blue-400 font-bold">{mediaFile.opacity ?? 100}%</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                step="1"
+                                value={mediaFile.opacity ?? 100}
+                                onChange={(e) => onUpdateMedia(mediaFile.id, { opacity: Number(e.target.value) })}
+                                className="w-full h-2 rounded-lg appearance-none cursor-pointer bg-slate-700"
+                            />
+                        </div>
+                    </div>
+                )}
+
                 {/* Audio Properties */}
                 {(mediaFile.type === "video" || mediaFile.type === "audio") && <div className="space-y-2">
                     <h4 className="font-semibold">Audio Properties</h4>
@@ -210,8 +311,6 @@ export default function MediaProperties({ editAll = false }: MediaPropertiesProp
                         </div> */}
                     </div>
                 </div>}
-                <div >
-                </div>
             </div>
         </div >
     );

@@ -6,11 +6,13 @@ import { setMediaFiles, setFilesID, setTextElements, setActiveElement, setActive
 import { storeFile, getFile } from "@/app/store";
 import { addMediaLoading, updateMediaProgress, completeMediaLoading, errorMediaLoading } from "@/app/store/slices/loadingSlice";
 import { MediaFile, LibraryItem, TextElement, MediaType } from "@/app/types";
-import { FileVideo, Crown, Zap, LayoutGrid, Upload, Library, Sparkles, Music, LogOut, Link as LinkIcon, Loader2, Trash2, Type, ArrowLeft, Wand2, Video, AudioWaveform, ArrowRight } from "lucide-react";
+import { FileVideo, Crown, Zap, LayoutGrid, Upload, Library, Sparkles, Music, LogOut, Link as LinkIcon, Loader2, Trash2, Type, ArrowLeft, Wand2, Video, AudioWaveform, ArrowRight, LayoutTemplate, Save, X, Image as ImageIcon } from "lucide-react";
+import { projectToTemplateData, saveUserTemplate } from "@/app/services/templateService";
+import { createPortal } from "react-dom";
 import Logo from "../Logo";
 import AITools from "./AssetsPanel/tools-section/AITools";
 import MediaList from "./AssetsPanel/tools-section/MediaList";
-import { MediaLibraryModal, AudioLibraryModal } from "./AssetsPanel/LibraryModal";
+import { MediaLibraryModal, AudioLibraryModal, ImageLibraryModal } from "./AssetsPanel/LibraryModal";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import { categorizeFile } from "@/app/utils/utils";
@@ -39,7 +41,19 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
     const [isImporting, setIsImporting] = useState(false);
     const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
     const [isAudioLibraryModalOpen, setIsAudioLibraryModalOpen] = useState(false);
+    const [isImageLibraryModalOpen, setIsImageLibraryModalOpen] = useState(false);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+    
+    // Save as template state
+    const [isSaveTemplateModalOpen, setIsSaveTemplateModalOpen] = useState(false);
+    const [templateName, setTemplateName] = useState('');
+    const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+    const [mounted, setMounted] = useState(false);
+    
+    // Mount check for portal
+    useState(() => {
+        setMounted(true);
+    });
 
     // Real user stats from AuthContext
     const creditsUsed = usageInfo?.used ?? null;
@@ -458,6 +472,7 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
                 zIndex: 0,
                 src: URL.createObjectURL(file),
                 supabaseFileId: supabaseFileId,
+                supabaseFolder: libraryItem.folder || null,
             };
 
             // Remove existing audio track if any
@@ -490,6 +505,10 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
 
     const handleOpenLibrary = () => {
         setIsLibraryModalOpen(true);
+    };
+
+    const handleOpenImageLibrary = () => {
+        setIsImageLibraryModalOpen(true);
     };
 
     const handleAddLibraryItemsToTimeline = async (items: LibraryItem[]) => {
@@ -633,6 +652,7 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
                     fileType,
                     file,
                     supabaseFileId,
+                    supabaseFolder: libraryItem.folder || null,
                     originalWidth,
                     originalHeight,
                     initialFit,
@@ -652,7 +672,7 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
         for (const result of results) {
             if (!result) continue;
 
-            const { libraryItem, fileId, fileType, file, supabaseFileId, originalWidth, originalHeight, initialFit } = result;
+            const { libraryItem, fileId, fileType, file, supabaseFileId, supabaseFolder, originalWidth, originalHeight, initialFit } = result;
 
             // Check if there are placeholders of the matching type that can be replaced
             const matchingPlaceholders = updatedMedia.filter(
@@ -703,6 +723,7 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
                     isPlaceholder: false,
                     placeholderType: undefined,
                     supabaseFileId: supabaseFileId,
+                    supabaseFolder: supabaseFolder,
                 };
                 replacedCount++;
             } else {
@@ -748,6 +769,7 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
                     originalWidth: fileType === 'video' ? originalWidth : undefined,
                     originalHeight: fileType === 'video' ? originalHeight : undefined,
                     supabaseFileId: supabaseFileId,
+                    supabaseFolder: supabaseFolder,
                 });
                 addedCount++;
             }
@@ -763,6 +785,205 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
             toast.success(`Replaced ${replacedCount} placeholder(s) with media`);
         } else if (addedCount > 0) {
             toast.success(`Added ${addedCount} media file(s) to timeline`);
+        }
+    };
+
+    // Helper function to get image dimensions
+    const getImageDimensions = (file: File): Promise<{ width: number; height: number }> => {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                resolve({ width: img.naturalWidth, height: img.naturalHeight });
+                URL.revokeObjectURL(img.src);
+            };
+            img.onerror = () => {
+                reject(new Error('Failed to load image'));
+                URL.revokeObjectURL(img.src);
+            };
+            img.src = URL.createObjectURL(file);
+        });
+    };
+
+    // Calculate image fit to canvas while maintaining aspect ratio
+    const calculateImageFit = (imgWidth: number, imgHeight: number): { width: number; height: number; x: number; y: number } => {
+        const canvasAspect = CANVAS_WIDTH / CANVAS_HEIGHT;
+        const imageAspect = imgWidth / imgHeight;
+        
+        let width: number, height: number;
+        
+        if (imageAspect > canvasAspect) {
+            // Image is wider than canvas - fit to width
+            width = CANVAS_WIDTH;
+            height = CANVAS_WIDTH / imageAspect;
+        } else {
+            // Image is taller than canvas - fit to height
+            height = CANVAS_HEIGHT;
+            width = CANVAS_HEIGHT * imageAspect;
+        }
+        
+        // Center the image
+        const x = (CANVAS_WIDTH - width) / 2;
+        const y = (CANVAS_HEIGHT - height) / 2;
+        
+        return { width, height, x, y };
+    };
+
+    const handleAddImageToTimeline = async (items: LibraryItem[]) => {
+        if (items.length === 0) return;
+
+        if (!user) {
+            toast.error('You must be logged in to add images from library');
+            return;
+        }
+
+        // Filter valid items
+        const validItems = items.filter(item => 
+            item.url && (!item.status || item.status === 'completed') && item.type === 'image'
+        );
+
+        if (validItems.length === 0) {
+            toast.error('No valid images to add');
+            return;
+        }
+
+        // Add all items to loading tracker
+        const itemsWithFileIds = validItems.map(item => ({
+            libraryItem: item,
+            fileId: crypto.randomUUID(),
+        }));
+
+        for (const { fileId, libraryItem } of itemsWithFileIds) {
+            dispatch(addMediaLoading({ fileId, fileName: libraryItem.name, type: 'image' }));
+        }
+
+        const updatedFiles = [...(filesID || [])];
+        const updatedMedia = [...mediaFiles];
+        let addedCount = 0;
+
+        // Process all items in parallel
+        const processItem = async ({ libraryItem, fileId }: typeof itemsWithFileIds[0]) => {
+            try {
+                dispatch(updateMediaProgress({ fileId, progress: 5 }));
+                
+                // Download file from URL (libraryItem.url is already a signed URL)
+                let file: File;
+                try {
+                    // Try using the existing signed URL first (faster)
+                    const response = await fetch(libraryItem.url);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error: ${response.status}`);
+                    }
+                    const blob = await response.blob();
+                    file = new File([blob], libraryItem.name, { type: blob.type || 'image/jpeg' });
+                } catch (urlError) {
+                    // Fallback to downloadMediaFile if URL fetch fails
+                    console.warn('URL fetch failed, trying downloadMediaFile:', urlError);
+                    file = await downloadMediaFile(libraryItem, user.id);
+                }
+                dispatch(updateMediaProgress({ fileId, progress: 50 }));
+
+                // Construct Supabase file ID
+                const supabaseFileId = libraryItem.id
+                    ? (() => {
+                          const fileExt = libraryItem.name.split('.').pop() || 'jpg';
+                          return `${libraryItem.id}.${fileExt}`;
+                      })()
+                    : undefined;
+
+                // Store in IndexedDB
+                try {
+                    await storeFile(file, fileId, (progress) => {
+                        dispatch(updateMediaProgress({ fileId, progress: 50 + (progress * 0.5) }));
+                    });
+                    dispatch(completeMediaLoading({ fileId }));
+                    updatedFiles.push(fileId);
+                } catch (error: any) {
+                    dispatch(errorMediaLoading({ fileId, error: error.message || 'Failed to cache image' }));
+                    console.error('Error storing file:', error);
+                    toast.error(`Failed to load ${libraryItem.name}`);
+                    return null;
+                }
+
+                // Get image dimensions
+                let imageDimensions: { width: number; height: number };
+                try {
+                    imageDimensions = await getImageDimensions(file);
+                } catch (error) {
+                    console.error('Failed to get image dimensions:', error);
+                    imageDimensions = { width: CANVAS_WIDTH, height: CANVAS_HEIGHT };
+                }
+
+                // Calculate fit
+                const fit = calculateImageFit(imageDimensions.width, imageDimensions.height);
+
+                return {
+                    libraryItem,
+                    fileId,
+                    file,
+                    supabaseFileId,
+                    supabaseFolder: libraryItem.folder || null,
+                    fit,
+                    originalWidth: imageDimensions.width,
+                    originalHeight: imageDimensions.height,
+                };
+            } catch (error: any) {
+                dispatch(errorMediaLoading({ fileId, error: error.message || 'Failed to download' }));
+                console.error('Error adding image to timeline:', error);
+                toast.error(`Failed to add ${libraryItem.name}: ${error.message}`);
+                return null;
+            }
+        };
+
+        // Process all items in parallel
+        const results = await Promise.all(itemsWithFileIds.map(processItem));
+
+        // Add successful results to media array
+        for (const result of results) {
+            if (!result) continue;
+
+            const { libraryItem, fileId, file, supabaseFileId, supabaseFolder, fit, originalWidth, originalHeight } = result;
+
+            // Get position for the new image (after the last image or at 0)
+            const imageClips = updatedMedia.filter(clip => clip.type === 'image');
+            const lastEnd = imageClips.length > 0
+                ? Math.max(...imageClips.map(f => f.positionEnd))
+                : 0;
+
+            const mediaId = crypto.randomUUID();
+            updatedMedia.push({
+                id: mediaId,
+                fileName: libraryItem.name,
+                fileId: fileId,
+                startTime: 0,
+                endTime: DEFAULT_MEDIA_TIME,
+                src: URL.createObjectURL(file),
+                positionStart: lastEnd,
+                positionEnd: lastEnd + DEFAULT_MEDIA_TIME,
+                includeInMerge: true,
+                x: fit.x,
+                y: fit.y,
+                width: fit.width,
+                height: fit.height,
+                rotation: 0,
+                opacity: 100,
+                crop: { x: 0, y: 0, width: fit.width, height: fit.height },
+                playbackSpeed: 1,
+                volume: 0, // Images don't have audio
+                type: 'image',
+                zIndex: 1, // Images should be above videos by default
+                originalWidth,
+                originalHeight,
+                supabaseFileId,
+                supabaseFolder,
+            });
+            addedCount++;
+        }
+
+        dispatch(setFilesID(updatedFiles));
+        dispatch(setMediaFiles(updatedMedia));
+
+        if (addedCount > 0) {
+            toast.success(`Added ${addedCount} image(s) to timeline`);
         }
     };
 
@@ -796,6 +1017,64 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
 
     const handleGoToProjects = () => {
         router.push('/');
+    };
+    
+    const handleSaveAsTemplate = async () => {
+        if (!user || !templateName.trim()) {
+            toast.error('Please enter a template name');
+            return;
+        }
+        
+        // Get current project state
+        const projectState = {
+            mediaFiles,
+            textElements,
+            resolution: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT },
+            fps: 30,
+            aspectRatio: '9:16',
+        };
+        
+        setIsSavingTemplate(true);
+        
+        try {
+            // Convert project to template data
+            const templateData = projectToTemplateData(projectState as any);
+            
+            // Save to database
+            const savedId = await saveUserTemplate({
+                name: templateName.trim(),
+                templateData,
+            });
+            
+            if (savedId) {
+                toast.success(
+                    (t) => (
+                        <div className="flex items-center gap-3">
+                            <span>Template saved!</span>
+                            <button
+                                onClick={() => {
+                                    toast.dismiss(t.id);
+                                    router.push(`/templates/${savedId}?type=personal`);
+                                }}
+                                className="px-2 py-1 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded transition-colors"
+                            >
+                                View Template
+                            </button>
+                        </div>
+                    ),
+                    { duration: 5000 }
+                );
+                setIsSaveTemplateModalOpen(false);
+                setTemplateName('');
+            } else {
+                toast.error('Failed to save template');
+            }
+        } catch (error: any) {
+            console.error('Error saving template:', error);
+            toast.error(error.message || 'Failed to save template');
+        } finally {
+            setIsSavingTemplate(false);
+        }
     };
 
     return (
@@ -870,20 +1149,27 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
                         <Library className="w-4 h-4" /> Assets
                     </h2>
                     
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-3 gap-3">
                         <button 
                             onClick={handleOpenLibrary}
-                            className="flex flex-col items-center justify-center p-4 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
+                            className="flex flex-col items-center justify-center p-3 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
                         >
-                            <Library className="w-6 h-6 mb-2" />
-                            <span className="text-xs font-bold">Library</span>
+                            <Library className="w-5 h-5 mb-1.5" />
+                            <span className="text-[10px] font-bold">Library</span>
+                        </button>
+                        <button 
+                            onClick={handleOpenImageLibrary}
+                            className="flex flex-col items-center justify-center p-3 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
+                        >
+                            <ImageIcon className="w-5 h-5 mb-1.5" />
+                            <span className="text-[10px] font-bold">Images</span>
                         </button>
                         <button 
                             onClick={handleAddText}
-                            className="flex flex-col items-center justify-center p-4 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
+                            className="flex flex-col items-center justify-center p-3 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 rounded-xl transition-all"
                         >
-                            <Type className="w-6 h-6 mb-2" />
-                            <span className="text-xs font-bold">Add Text</span>
+                            <Type className="w-5 h-5 mb-1.5" />
+                            <span className="text-[10px] font-bold">Text</span>
                         </button>
                     </div>
                 </div>
@@ -945,6 +1231,29 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
                                 </div>
                                 <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-slate-300 group-hover:translate-x-0.5 transition-all" />
                             </div>
+                        </div>
+                    </button>
+                </div>
+
+                {/* Save as Template */}
+                <div>
+                    <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <LayoutTemplate className="w-4 h-4" /> Templates
+                    </h2>
+                    <button
+                        onClick={() => {
+                            setTemplateName(projectName || 'My Template');
+                            setIsSaveTemplateModalOpen(true);
+                        }}
+                        disabled={mediaFiles.length === 0 && textElements.length === 0}
+                        className="w-full flex items-center gap-3 p-3 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white border border-slate-700 hover:border-slate-600 rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500/20 to-purple-500/20 border border-cyan-500/20 flex items-center justify-center">
+                            <Save className="w-5 h-5 text-cyan-400" />
+                        </div>
+                        <div className="text-left">
+                            <span className="text-sm font-bold">Save as Template</span>
+                            <p className="text-[10px] text-slate-500">Reuse this layout later</p>
                         </div>
                     </button>
                 </div>
@@ -1018,6 +1327,13 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
                 onAddToTimeline={handleAddAudioFromLibrary}
             />
 
+            {/* Image Library Modal */}
+            <ImageLibraryModal
+                isOpen={isImageLibraryModalOpen}
+                onClose={() => setIsImageLibraryModalOpen(false)}
+                onAddToTimeline={handleAddImageToTimeline}
+            />
+
             {/* Upgrade Modal */}
             <UpgradeModal
                 isOpen={showUpgradeModal}
@@ -1025,6 +1341,94 @@ export default function LeftSidebar({ onOpenModal, onOpenAIModal }: LeftSidebarP
                 usedCount={creditsUsed ?? 0}
                 limitCount={creditsLimit}
             />
+            
+            {/* Save as Template Modal */}
+            {isSaveTemplateModalOpen && typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center z-[100] p-0 sm:p-4">
+                    <div 
+                        className="bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 w-full sm:max-w-md shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-purple-500/20 border border-cyan-500/30 flex items-center justify-center">
+                                    <LayoutTemplate className="w-5 h-5 text-cyan-400" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-white">Save as Template</h3>
+                                    <p className="text-xs text-slate-400">Create a reusable template</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setIsSaveTemplateModalOpen(false)}
+                                className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-300 mb-2">
+                                    Template Name
+                                </label>
+                                <input
+                                    type="text"
+                                    value={templateName}
+                                    onChange={(e) => setTemplateName(e.target.value)}
+                                    placeholder="My Awesome Template"
+                                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent placeholder:text-slate-500"
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            handleSaveAsTemplate();
+                                        } else if (e.key === 'Escape') {
+                                            setIsSaveTemplateModalOpen(false);
+                                        }
+                                    }}
+                                />
+                            </div>
+                            
+                            <div className="bg-slate-800/50 rounded-xl p-4">
+                                <h4 className="text-sm font-medium text-slate-300 mb-2">Template Contents</h4>
+                                <div className="space-y-1 text-xs text-slate-400">
+                                    <p>• {mediaFiles.filter(m => m.type === 'video' || m.type === 'image').length} video/image slot(s)</p>
+                                    <p>• {textElements.length} text element(s)</p>
+                                    {mediaFiles.some(m => m.type === 'audio') && (
+                                        <p>• Audio track timing preserved</p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="flex gap-3 mt-6">
+                            <button
+                                onClick={() => setIsSaveTemplateModalOpen(false)}
+                                className="flex-1 px-4 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSaveAsTemplate}
+                                disabled={!templateName.trim() || isSavingTemplate}
+                                className="flex-1 px-4 py-3 bg-gradient-to-r from-cyan-500 to-purple-500 hover:from-cyan-400 hover:to-purple-400 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/25 disabled:shadow-none flex items-center justify-center gap-2"
+                            >
+                                {isSavingTemplate ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Saving...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Save className="w-4 h-4" />
+                                        Save Template
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
         </div>
     );
 }

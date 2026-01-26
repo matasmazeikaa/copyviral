@@ -11,7 +11,9 @@ import {
     FolderOpen,
     ChevronRight,
     Menu,
-    X
+    X,
+    Video,
+    LayoutTemplate
 } from "lucide-react";
 import Logo from "../Logo";
 
@@ -35,8 +37,11 @@ export default function Header() {
         }
     };
 
-    const navLinks: { href: string; icon: React.ComponentType<{ className?: string }>; label: string }[] = [
-    ];
+    const navLinks: { href: string; icon: React.ComponentType<{ className?: string }>; label: string }[] = user ? [
+        { href: '/projects', icon: FolderOpen, label: 'Projects' },
+        { href: '/templates', icon: LayoutTemplate, label: 'Templates' },
+        { href: '/videos', icon: Video, label: 'My Videos' },
+    ] : [];
 
     return (
         <header className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/50 safe-top">
@@ -183,6 +188,29 @@ export default function Header() {
                                         </p>
                                         <p className="text-xs text-slate-400 truncate">{user.email}</p>
                                     </div>
+                                </div>
+
+                                {/* Navigation Links */}
+                                <div className="space-y-2">
+                                    {navLinks.map((link) => {
+                                        const Icon = link.icon;
+                                        const isActive = pathname === link.href;
+                                        return (
+                                            <Link
+                                                key={link.href}
+                                                href={link.href}
+                                                onClick={() => setIsMobileMenuOpen(false)}
+                                                className={`flex items-center gap-2 p-3 rounded-xl transition-all ${
+                                                    isActive 
+                                                        ? 'bg-slate-800 text-white' 
+                                                        : 'bg-slate-800/50 hover:bg-slate-800'
+                                                }`}
+                                            >
+                                                <Icon className="w-5 h-5 text-purple-400" />
+                                                <span className="text-sm font-medium text-white">{link.label}</span>
+                                            </Link>
+                                        );
+                                    })}
                                 </div>
 
                                 {/* Subscription Status */}

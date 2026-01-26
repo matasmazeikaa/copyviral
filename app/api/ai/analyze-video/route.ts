@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI, Type } from "@google/genai";
 import { createClient, createAdminClient } from "@/app/utils/supabase/server";
 
+// Storage constants
+const STORAGE_BUCKET = 'media-library';
+
 const apiKey = process.env.GEMINI_API_KEY;
 
 const VIDEO_ANALYSIS_PROMPT = `Act as a **Frame-Perfect Video Telemetry Engine**. Your objective is to convert visual video data into precise, machine-readable JSON.
@@ -310,6 +313,80 @@ const runSingleAnalysis = async (
 
 const FREE_TIER_LIMIT = 3;
 
+// Special folder for AI reference videos (hidden from media library)
+const AI_REFERENCE_FOLDER = '_ai_ref';
+
+/**
+ * Helper to upload file to Supabase storage
+ * AI reference videos are stored in a special folder to keep them separate from user's media library
+ */
+async function uploadToSupabase(
+  supabase: any,
+  userId: string,
+  fileBuffer: ArrayBuffer,
+  fileName: string,
+  mimeType: string
+): Promise<{ supabaseFileId: string; filePath: string; folder: string } | null> {
+  try {
+    const fileId = crypto.randomUUID();
+    const fileExt = fileName.split('.').pop() || 'mp4';
+    // Store in special AI reference folder to hide from media library
+    const storagePath = `${userId}/${AI_REFERENCE_FOLDER}/${fileId}.${fileExt}`;
+    
+    const { error } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(storagePath, fileBuffer, {
+        contentType: mimeType,
+        cacheControl: '3600',
+        upsert: false,
+      });
+    
+    if (error) {
+      console.error('Failed to upload to Supabase storage:', error);
+      return null;
+    }
+    
+    return {
+      supabaseFileId: `${fileId}.${fileExt}`,
+      filePath: storagePath,
+      folder: AI_REFERENCE_FOLDER,
+    };
+  } catch (error) {
+    console.error('Error uploading to Supabase:', error);
+    return null;
+  }
+}
+
+/**
+ * Helper to download video from URL
+ */
+async function downloadVideoFromUrl(url: string): Promise<{ buffer: ArrayBuffer; mimeType: string; fileName: string } | null> {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; ClipJS/1.0)',
+      },
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to download: ${response.status}`);
+    }
+    
+    const buffer = await response.arrayBuffer();
+    const contentType = response.headers.get('content-type') || 'video/mp4';
+    const mimeType = contentType.split(';')[0].trim();
+    
+    // Extract filename from URL or generate one
+    const urlPath = new URL(url).pathname;
+    const fileName = urlPath.split('/').pop() || `video_${Date.now()}.mp4`;
+    
+    return { buffer, mimeType, fileName };
+  } catch (error) {
+    console.error('Error downloading video from URL:', error);
+    return null;
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
@@ -350,21 +427,50 @@ export async function POST(request: NextRequest) {
 
     const ai = new GoogleGenAI({ apiKey });
 
-    // Get the form data with the video file
+    // Get the form data - can have either a file or a URL
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
+    const videoUrl = formData.get("url") as string | null;
 
-    if (!file) {
+    let arrayBuffer: ArrayBuffer;
+    let mimeType: string;
+    let fileName: string;
+
+    if (file) {
+      // Direct file upload
+      arrayBuffer = await file.arrayBuffer();
+      mimeType = file.type || "video/mp4";
+      fileName = file.name || `video_${Date.now()}.mp4`;
+    } else if (videoUrl) {
+      // Download from URL
+      const downloaded = await downloadVideoFromUrl(videoUrl);
+      if (!downloaded) {
+        return NextResponse.json(
+          { error: "Failed to download video from URL" },
+          { status: 400 }
+        );
+      }
+      arrayBuffer = downloaded.buffer;
+      mimeType = downloaded.mimeType;
+      fileName = downloaded.fileName;
+    } else {
       return NextResponse.json(
-        { error: "No file provided" },
+        { error: "No file or URL provided" },
         { status: 400 }
       );
     }
 
-    // Convert file to base64
-    const arrayBuffer = await file.arrayBuffer();
+    // Upload video to Supabase storage for audio persistence
+    const uploadResult = await uploadToSupabase(
+      supabase,
+      user.id,
+      arrayBuffer,
+      fileName,
+      mimeType
+    );
+
+    // Convert to base64 for AI analysis
     const base64Data = Buffer.from(arrayBuffer).toString("base64");
-    const mimeType = file.type || "video/mp4";
 
     // Run 3 analyses in parallel for consensus
     console.log("Running 3 parallel video analyses for consensus...");
@@ -499,6 +605,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Calculate total duration for audio
+    const totalDuration = durations.reduce((sum, d) => sum + d, 0);
+
     return NextResponse.json({
       durations: durations.length > 0 ? durations : [2, 2, 2],
       textLayers: mappedLayers,
@@ -506,6 +615,13 @@ export async function POST(request: NextRequest) {
         videoMode: finalMode,
         videoScale,
       },
+      // Audio file info from Supabase upload (for persistence)
+      audio: uploadResult ? {
+        supabaseFileId: uploadResult.supabaseFileId,
+        fileName: fileName,
+        duration: totalDuration,
+        folder: uploadResult.folder, // Folder path for fetching
+      } : null,
     });
   } catch (error: any) {
     console.error("Error analyzing video:", error);

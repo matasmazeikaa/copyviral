@@ -1,7 +1,21 @@
-import { loadStripe } from '@stripe/stripe-js';
+import { loadStripe, Stripe } from '@stripe/stripe-js';
 
-// Initialize Stripe
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+// Initialize Stripe lazily to avoid errors when env var is missing
+let stripePromise: Promise<Stripe | null> | null = null;
+
+function getStripe(): Promise<Stripe | null> {
+    if (!stripePromise) {
+        const key = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+        if (!key) {
+            console.warn('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set');
+            return Promise.resolve(null);
+        }
+        stripePromise = loadStripe(key);
+    }
+    return stripePromise;
+}
+
+export { getStripe };
 
 export interface UsageInfo {
   canGenerate: boolean;

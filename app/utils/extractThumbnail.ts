@@ -1,40 +1,122 @@
-// TODO: this is not used for now, but it's a good idea to integrate it in the future
-export const extractThumbnail = (file: File): Promise<File> => {
+/**
+ * Extract a thumbnail from a video file at a specific time
+ * @param file - The video file to extract thumbnail from
+ * @param fileId - The ID to use for the thumbnail filename
+ * @param seekTime - Time in seconds to capture the thumbnail (default: 1s)
+ * @returns A File object containing the thumbnail image
+ */
+export const extractThumbnail = (
+    file: File, 
+    fileId: string,
+    seekTime: number = 1
+): Promise<File> => {
     return new Promise((resolve, reject) => {
         const video = document.createElement("video");
-        video.src = URL.createObjectURL(file);
-        video.crossOrigin = "anonymous";
-        video.muted = true;
-        video.currentTime = 1;
+        const objectUrl = URL.createObjectURL(file);
+        
+        let resolved = false;
+        
+        const cleanup = () => {
+            URL.revokeObjectURL(objectUrl);
+            video.src = "";
+            video.load();
+        };
 
-        video.addEventListener("loadeddata", () => {
-            video.addEventListener("seeked", () => {
+        const handleError = (error: string) => {
+            if (resolved) return;
+            resolved = true;
+            cleanup();
+            reject(error);
+        };
+        
+        const captureFrame = () => {
+            if (resolved) return;
+            
+            try {
                 const canvas = document.createElement("canvas");
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
+                // Use reasonable thumbnail dimensions (max 480p)
+                const maxWidth = 480;
+                const maxHeight = 270;
+                let width = video.videoWidth;
+                let height = video.videoHeight;
+                
+                // Check if video dimensions are valid
+                if (width === 0 || height === 0) {
+                    handleError("Video dimensions not available");
+                    return;
+                }
+                
+                // Scale down if needed while maintaining aspect ratio
+                if (width > maxWidth) {
+                    height = (height * maxWidth) / width;
+                    width = maxWidth;
+                }
+                if (height > maxHeight) {
+                    width = (width * maxHeight) / height;
+                    height = maxHeight;
+                }
+                
+                canvas.width = Math.floor(width);
+                canvas.height = Math.floor(height);
 
                 const ctx = canvas.getContext("2d");
-                if (!ctx) return reject("Could not get canvas context");
+                if (!ctx) {
+                    handleError("Could not get canvas context");
+                    return;
+                }
 
                 ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
                 canvas.toBlob((blob) => {
+                    if (resolved) return;
+                    resolved = true;
+                    cleanup();
+                    
                     if (blob) {
                         const thumbnailFile = new File(
                             [blob],
-                            `${file.name.split(".")[0]}_thumb.jpg`,
+                            `${fileId}_thumb.jpg`,
                             { type: "image/jpeg" }
                         );
                         resolve(thumbnailFile);
                     } else {
                         reject("Could not create thumbnail blob");
                     }
-                }, "image/jpeg");
-            });
+                }, "image/jpeg", 0.8);
+            } catch (error) {
+                handleError(`Error creating thumbnail: ${error}`);
+            }
+        };
 
-            video.currentTime = 1;
+        // Set up video element
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = "auto"; // Load full video data for seeking
+        
+        video.addEventListener("loadeddata", () => {
+            // Video has enough data to play - now we can seek
+            const targetTime = Math.min(seekTime, Math.max(0, video.duration - 0.1));
+            video.currentTime = targetTime;
         });
 
-        video.onerror = () => reject("Error loading video");
+        video.addEventListener("seeked", () => {
+            // Small delay to ensure frame is ready
+            setTimeout(captureFrame, 100);
+        });
+
+        video.addEventListener("error", () => {
+            const errorMessage = video.error?.message || "Error loading video";
+            handleError(errorMessage);
+        });
+        
+        // Start loading
+        video.src = objectUrl;
+        
+        // Timeout to prevent hanging
+        setTimeout(() => {
+            if (!resolved) {
+                handleError("Thumbnail extraction timed out");
+            }
+        }, 30000);
     });
 };

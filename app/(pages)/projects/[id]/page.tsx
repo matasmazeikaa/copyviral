@@ -198,6 +198,12 @@ interface AnalyzeVideoResult {
     videoMode?: string;
     videoScale?: number;
   };
+  // Audio file info from backend Supabase upload
+  audio?: {
+    supabaseFileId: string;
+    fileName: string;
+    duration: number;
+  } | null;
 }
 
 export default function Project({ params }: { params: { id: string } }) {
@@ -373,6 +379,7 @@ export default function Project({ params }: { params: { id: string } }) {
                                         media.supabaseFileId,
                                         media.fileName,
                                         user.id,
+                                        media.supabaseFolder,
                                         !cachedFile ? (progress) => {
                                             dispatch(updateMediaProgress({ fileId: media.fileId, progress }));
                                         } : undefined
@@ -510,7 +517,7 @@ export default function Project({ params }: { params: { id: string } }) {
             }
             await refreshUsage(true);
 
-            // Store the video file for audio extraction
+            // Store the video file locally in IndexedDB for playback
             const audioFileId = crypto.randomUUID();
             
             dispatch(addMediaLoading({ fileId: audioFileId, fileName: file.name, type: 'video' }));
@@ -570,9 +577,10 @@ export default function Project({ params }: { params: { id: string } }) {
             });
 
             // Create audio MediaFile from the reference video
+            // supabaseFileId comes from the API response (backend uploaded it)
             const audioMediaFile: MediaFile = {
                 id: crypto.randomUUID(),
-                fileName: "Reference Audio",
+                fileName: result.audio?.fileName || file.name || "Reference Audio",
                 fileId: audioFileId,
                 type: "audio",
                 startTime: 0,
@@ -584,6 +592,7 @@ export default function Project({ params }: { params: { id: string } }) {
                 volume: 50,
                 zIndex: 0,
                 src: URL.createObjectURL(file),
+                supabaseFileId: result.audio?.supabaseFileId, // From backend upload
             };
 
             const allMediaFiles = [...newPlaceholders, audioMediaFile];
@@ -656,13 +665,14 @@ export default function Project({ params }: { params: { id: string } }) {
         }
     }, [searchParams, isLoading, currentProjectId, id, handleAutoAnalyze]);
 
-    // Context-based analysis - trigger immediately when pendingUrl is set from sidebar
+    // Context-based analysis - trigger immediately when pendingUrl is set from sidebar/projects page
+    // No need to wait for project to load since analysis (scraping, AI API) doesn't depend on project data
     useEffect(() => {
-        if (pendingUrl && !isLoading && currentProjectId === id && contextAnalyzeTriggered.current !== pendingUrl) {
+        if (pendingUrl && contextAnalyzeTriggered.current !== pendingUrl) {
             contextAnalyzeTriggered.current = pendingUrl;
             handleAutoAnalyze(pendingUrl, true);
         }
-    }, [pendingUrl, isLoading, currentProjectId, id, handleAutoAnalyze]);
+    }, [pendingUrl, handleAutoAnalyze]);
 
     return (
         <div className="fixed inset-0 overflow-hidden bg-[#0f172a]">

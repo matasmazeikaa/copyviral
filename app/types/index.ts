@@ -45,6 +45,7 @@ export interface MediaFile {
 
     // Supabase storage reference (for fallback when IndexedDB is cleared)
     supabaseFileId?: string; // The file ID in Supabase storage (format: {fileId}.{ext})
+    supabaseFolder?: string | null; // Folder path in Supabase storage
     
     // Upload status
     status?: 'uploading' | 'ready' | 'error';
@@ -160,6 +161,16 @@ export interface LibraryItem {
     size?: number;
     createdAt?: string;
     status?: 'uploading' | 'completed' | 'error';
+    folder?: string | null; // Folder path (null or empty string = root)
+    thumbnailUrl?: string | null; // URL to thumbnail image for video files
+}
+
+export interface MediaFolder {
+    id: string;
+    name: string;
+    path: string; // Full path relative to user folder
+    createdAt?: string;
+    itemCount?: number;
 }
 
 export const mimeToExt = {
@@ -172,3 +183,131 @@ export const mimeToExt = {
     'video/webm': 'webm',
     // TODO: Add more as needed
 };
+
+// ============================================
+// Template Types
+// ============================================
+
+/**
+ * A slot in a template representing a placeholder for video content
+ * Similar to MediaFile but specifically for template structure
+ */
+export interface TemplateSlot {
+    id: string;
+    index: number;                    // Order in the template (1, 2, 3...)
+    duration: number;                 // Duration in seconds
+    positionStart: number;            // Start position in timeline
+    positionEnd: number;              // End position in timeline
+    
+    // Visual positioning (optional, for preview)
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    
+    // Media type expected
+    mediaType: MediaType;
+    
+    // Supabase storage reference (for persistent image/video files)
+    supabaseFileId?: string;          // The file ID in Supabase storage (format: {fileId}.{ext})
+    supabaseFolder?: string | null;   // Folder path in Supabase storage
+    fileName?: string;                // Original filename for restoration
+}
+
+/**
+ * Text element in a template - editable by users
+ */
+export interface TemplateTextElement {
+    id: string;
+    text: string;                     // Default/example text
+    positionStart: number;
+    positionEnd: number;
+    x: number;
+    y: number;
+    fontSize?: number;
+    color?: string;
+    font?: string;
+    align?: 'left' | 'center' | 'right';
+    
+    // Template-specific
+    isEditable: boolean;              // Can user edit this text?
+    placeholder?: string;             // Hint for the user
+}
+
+/**
+ * Static image in a template - not changeable by users
+ * Images are saved with the template and displayed as-is
+ */
+export interface TemplateImage {
+    id: string;
+    positionStart: number;
+    positionEnd: number;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    zIndex?: number;
+    
+    // Supabase storage reference (required for images)
+    supabaseFileId: string;
+    supabaseFolder?: string | null;
+    fileName: string;
+}
+
+/**
+ * Template data structure stored in JSONB
+ */
+export interface TemplateData {
+    slots: TemplateSlot[];            // Video placeholders (user fills these)
+    textElements: TemplateTextElement[];
+    images?: TemplateImage[];         // Static images (saved with template, not changeable)
+    
+    // Video settings
+    resolution: { width: number; height: number };
+    fps: number;
+    aspectRatio: string;
+    
+    // Audio (optional reference audio from original)
+    audioFileUrl?: string;           // Deprecated: blob URL (not persistent)
+    audioDuration?: number;
+    audioSupabaseFileId?: string;    // Supabase storage file ID for persistent audio
+    audioFileName?: string;          // Original filename for the audio
+    audioFolder?: string | null;     // Folder path in Supabase storage for audio
+}
+
+/**
+ * Template type identifier
+ */
+export type TemplateType = 'community' | 'personal';
+
+/**
+ * Unified Template interface - stored in single table with type discriminator
+ * 
+ * - Community templates: type='community', userId=null, admin-managed
+ * - Personal templates: type='personal', userId=<user-id>, user-managed
+ */
+export interface Template {
+    id: string;
+    type: TemplateType;
+    userId: string | null;          // null for community, user id for personal
+    name: string;
+    description?: string | null;    // mainly for community templates
+    thumbnailUrl?: string | null;
+    viewCount: number;              // mainly for community templates
+    sourceUrl?: string | null;      // mainly for community templates
+    templateData: TemplateData;
+    isActive: boolean;
+    category: string;               // mainly for community templates
+    createdAt: string;
+    updatedAt: string;
+}
+
+/**
+ * Community template - type alias for clarity
+ */
+export type CommunityTemplate = Template & { type: 'community'; userId: null };
+
+/**
+ * User's personal template - type alias for clarity
+ */
+export type UserTemplate = Template & { type: 'personal'; userId: string };

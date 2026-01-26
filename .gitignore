@@ -38,3 +38,10 @@ next-env.d.ts
 
 # Sentry Config File
 .env.sentry-build-plugin
+
+# Lambda ffmpeg layer binaries (too large for GitHub)
+lambda/ffmpeg-layer/bin/
+lambda/ffmpeg-layer/ffmpeg-7.0.2-amd64-static/
+lambda/ffmpeg-layer/ffmpeg-master-latest-linux64-gpl/
+lambda/ffmpeg-layer/*.zip
+lambda/ffmpeg-layer/*.tar.xz

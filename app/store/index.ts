@@ -115,6 +115,7 @@ export const getFile = async (fileId: string) => {
  * @param supabaseFileId - The file ID in Supabase storage (format: {fileId}.{ext})
  * @param originalFileName - The original filename
  * @param userId - The user ID for Supabase access
+ * @param supabaseFolder - Optional folder path in Supabase storage
  * @param onProgress - Optional progress callback for media downloads
  */
 export const getFileWithFallback = async (
@@ -122,6 +123,7 @@ export const getFileWithFallback = async (
     supabaseFileId: string | undefined,
     originalFileName: string,
     userId: string | null,
+    supabaseFolder?: string | null,
     onProgress?: (progress: number) => void
 ): Promise<File | null> => {
     if (typeof window === 'undefined') return null;
@@ -136,7 +138,7 @@ export const getFileWithFallback = async (
     if (supabaseFileId && userId) {
         try {
             const { downloadMediaFileById } = await import('../services/mediaLibraryService');
-            const file = await downloadMediaFileById(supabaseFileId, originalFileName, userId);
+            const file = await downloadMediaFileById(supabaseFileId, originalFileName, userId, supabaseFolder);
             
             // Store the downloaded file in IndexedDB for future use
             if (onProgress) {

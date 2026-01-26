@@ -9,6 +9,43 @@
     display: none !important;
 }
 
+/* Corner resize handles for canvas overlay */
+.moveable-control-box .moveable-control {
+    width: 12px !important;
+    height: 12px !important;
+    background: #3b82f6 !important;
+    border: 2px solid white !important;
+    border-radius: 2px !important;
+    margin-top: -6px !important;
+    margin-left: -6px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3) !important;
+    cursor: nwse-resize !important;
+    z-index: 100 !important;
+    pointer-events: auto !important;
+}
+
+.moveable-control-box .moveable-control.moveable-nw {
+    cursor: nwse-resize !important;
+}
+
+.moveable-control-box .moveable-control.moveable-ne {
+    cursor: nesw-resize !important;
+}
+
+.moveable-control-box .moveable-control.moveable-sw {
+    cursor: nesw-resize !important;
+}
+
+.moveable-control-box .moveable-control.moveable-se {
+    cursor: nwse-resize !important;
+}
+
+/* Ensure the moveable control box is visible */
+.moveable-control-box {
+    z-index: 100 !important;
+    pointer-events: auto !important;
+}
+
 /* Render loader animations */
 @keyframes gradient-x {
     0%, 100% {

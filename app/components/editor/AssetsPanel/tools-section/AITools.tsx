@@ -176,6 +176,13 @@ interface AnalyzeVideoResult {
     videoMode?: string;
     videoScale?: number;
   };
+  // Audio file info from backend Supabase upload
+  audio?: {
+    supabaseFileId: string;
+    fileName: string;
+    duration: number;
+    folder?: string; // Folder path for fetching (e.g., _ai_ref)
+  } | null;
 }
 
 export default function AITools() {
@@ -204,7 +211,7 @@ export default function AITools() {
     setIsImporting(true);
     setLoadingStage('analyzing');
     try {
-      // Call the API route to analyze the video
+      // Call the API route to analyze the video (backend handles Supabase upload)
       const formData = new FormData();
       formData.append("file", file);
 
@@ -225,7 +232,7 @@ export default function AITools() {
       // Refresh usage count (backend already incremented during analysis)
       await refreshUsage(true);
 
-      // Store the video file for audio extraction
+      // Store the video file locally in IndexedDB for playback
       const audioFileId = crypto.randomUUID();
       
       // Track loading for the reference video
@@ -273,7 +280,7 @@ export default function AITools() {
           positionEnd: currentPosition + duration,
           includeInMerge: true,
           playbackSpeed: 1,
-          volume: 50, // 0 dB default (50 = 0 dB, 0-50 maps to -60 to 0 dB, 50-100 maps to 0 to +12 dB)
+          volume: 50,
           zIndex: 0,
           x: x,
           y: y,
@@ -290,9 +297,10 @@ export default function AITools() {
       });
 
       // Create audio MediaFile from the reference video
+      // supabaseFileId comes from the API response (backend uploaded it)
       const audioMediaFile: MediaFile = {
         id: crypto.randomUUID(),
-        fileName: "Reference Audio",
+        fileName: result.audio?.fileName || file.name || "Reference Audio",
         fileId: audioFileId,
         type: "audio",
         startTime: 0,
@@ -301,9 +309,11 @@ export default function AITools() {
         positionEnd: totalDuration,
         includeInMerge: true,
         playbackSpeed: 1,
-        volume: 50, // 0 dB default (50 = 0 dB, 0-50 maps to -60 to 0 dB, 50-100 maps to 0 to +12 dB)
+        volume: 50,
         zIndex: 0,
         src: URL.createObjectURL(file),
+        supabaseFileId: result.audio?.supabaseFileId, // From backend upload
+        supabaseFolder: result.audio?.folder, // Folder for fetching (e.g., _ai_ref)
       };
 
       // Combine placeholders and audio

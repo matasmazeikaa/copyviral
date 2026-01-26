@@ -1,0 +1,18 @@
+{
+  "name": "video-render-lambda",
+  "version": "1.0.0",
+  "description": "AWS Lambda function for video rendering with FFmpeg",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "package": "npm run build && zip -r function.zip dist node_modules fonts watermark.png && aws lambda update-function-code --function-name video-render --zip-file fileb://function.zip"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.86.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.131",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}

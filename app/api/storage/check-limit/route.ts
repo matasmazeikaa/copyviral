@@ -6,8 +6,7 @@ import {
   MAX_FILE_SIZE_DISPLAY,
   isAllowedFileType,
 } from '@/app/constants/storage';
-
-const STORAGE_BUCKET = 'media-library';
+import { calculateUserStorageUsage } from '@/app/utils/storageUsage';
 
 export async function GET(request: NextRequest) {
   try {
@@ -29,40 +28,26 @@ export async function GET(request: NextRequest) {
     const isPremium = subscriptionStatus === 'active';
     const storageLimit = isPremium ? STORAGE_LIMITS.pro : STORAGE_LIMITS.free;
 
-    // Get current storage usage
-    const { data: files, error: listError } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .list(user.id, {
-        limit: 1000,
-        offset: 0,
-      });
+    // Get comprehensive storage usage across all buckets (media-library + renders)
+    // including all subfolders
+    const storageUsage = await calculateUserStorageUsage(supabase, user.id);
 
-    if (listError) {
-      console.error('Error listing files:', listError);
-      return NextResponse.json({ error: 'Failed to check storage' }, { status: 500 });
-    }
-
-    // Calculate total used storage
-    let usedBytes = 0;
-    if (files) {
-      for (const file of files) {
-        if (file.metadata?.size) {
-          usedBytes += file.metadata.size;
-        }
-      }
-    }
-
-    const remainingBytes = Math.max(0, storageLimit - usedBytes);
-    const usagePercentage = (usedBytes / storageLimit) * 100;
+    const remainingBytes = Math.max(0, storageLimit - storageUsage.totalUsedBytes);
+    const usagePercentage = (storageUsage.totalUsedBytes / storageLimit) * 100;
 
     return NextResponse.json({
       isPremium,
-      usedBytes,
+      usedBytes: storageUsage.totalUsedBytes,
       limitBytes: storageLimit,
       remainingBytes,
       usagePercentage,
-      fileCount: files?.length || 0,
+      fileCount: storageUsage.mediaFileCount + storageUsage.renderFileCount,
       maxFileSize: MAX_FILE_SIZE_BYTES,
+      // Detailed breakdown
+      mediaLibraryBytes: storageUsage.mediaLibraryBytes,
+      rendersBytes: storageUsage.rendersBytes,
+      mediaFileCount: storageUsage.mediaFileCount,
+      renderFileCount: storageUsage.renderFileCount,
     });
   } catch (error: any) {
     console.error('Check storage limit error:', error);
@@ -76,6 +61,9 @@ export async function GET(request: NextRequest) {
 /**
  * POST endpoint to validate if a file can be uploaded
  * Body: { fileSize: number, mimeType?: string }
+ * 
+ * This checks comprehensive storage usage across both media-library and renders buckets.
+ * The 100GB limit applies to the combined total of uploaded files AND rendered videos.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -120,28 +108,10 @@ export async function POST(request: NextRequest) {
     const isPremium = subscriptionStatus === 'active';
     const storageLimit = isPremium ? STORAGE_LIMITS.pro : STORAGE_LIMITS.free;
 
-    // Get current storage usage
-    const { data: files, error: listError } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .list(user.id, {
-        limit: 1000,
-        offset: 0,
-      });
-
-    if (listError) {
-      console.error('Error listing files:', listError);
-      return NextResponse.json({ error: 'Failed to check storage' }, { status: 500 });
-    }
-
-    // Calculate total used storage
-    let usedBytes = 0;
-    if (files) {
-      for (const file of files) {
-        if (file.metadata?.size) {
-          usedBytes += file.metadata.size;
-        }
-      }
-    }
+    // Get comprehensive storage usage across all buckets (media-library + renders)
+    // including all subfolders
+    const storageUsage = await calculateUserStorageUsage(supabase, user.id);
+    const usedBytes = storageUsage.totalUsedBytes;
 
     const newTotal = usedBytes + fileSize;
     const canUpload = newTotal <= storageLimit;
@@ -150,10 +120,12 @@ export async function POST(request: NextRequest) {
       const limitText = isPremium ? '100GB' : '5GB';
       return NextResponse.json({
         canUpload: false,
-        error: `Upload would exceed your ${limitText} storage limit. ${isPremium ? '' : 'Upgrade to Pro for 100GB storage.'}`,
+        error: `Upload would exceed your ${limitText} storage limit (includes uploaded files and rendered videos). ${isPremium ? '' : 'Upgrade to Pro for 100GB storage.'}`,
         usedBytes,
         limitBytes: storageLimit,
         remainingBytes: Math.max(0, storageLimit - usedBytes),
+        mediaLibraryBytes: storageUsage.mediaLibraryBytes,
+        rendersBytes: storageUsage.rendersBytes,
       }, { status: 400 });
     }
 
@@ -163,6 +135,8 @@ export async function POST(request: NextRequest) {
       limitBytes: storageLimit,
       remainingBytes: Math.max(0, storageLimit - usedBytes),
       newTotalAfterUpload: newTotal,
+      mediaLibraryBytes: storageUsage.mediaLibraryBytes,
+      rendersBytes: storageUsage.rendersBytes,
     });
   } catch (error: any) {
     console.error('Validate upload error:', error);

@@ -31,6 +31,10 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
     const videoDragOffsetRef = useRef<number>(0); // Visual offset in pixels during drag (using ref for performance)
     const [, forceRender] = useState(0); // Force re-render for visual update
     const draggingVideoItemRef = useRef<{id: string, startPosition: number} | null>(null);
+    // Image dragging state
+    const [draggingImageItem, setDraggingImageItem] = useState<{id: string, startPosition: number} | null>(null);
+    const [imageDragStartPos, setImageDragStartPos] = useState<{x: number, y: number, clipId: string} | null>(null);
+    const draggingImageItemRef = useRef<{id: string, startPosition: number} | null>(null);
     const startXRef = useRef<number>(0);
     const startValueRef = useRef<number>(0);
     const mediaFilesRef = useRef(mediaFiles);
@@ -61,6 +65,10 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
     useEffect(() => {
         draggingVideoItemRef.current = draggingVideoItem;
     }, [draggingVideoItem]);
+
+    useEffect(() => {
+        draggingImageItemRef.current = draggingImageItem;
+    }, [draggingImageItem]);
 
     // Auto-scroll when dragging near edges
     const SCROLL_EDGE_SIZE = 80; // pixels from edge to start scrolling
@@ -483,7 +491,7 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
 
     // Scrubbing handlers
     const handleScrubStart = (e: React.PointerEvent) => {
-        if (resizingItem || draggingTextItem || textDragStartPos || draggingAudioItem || audioDragStartPos || draggingVideoItem || videoDragStartPos) return;
+        if (resizingItem || draggingTextItem || textDragStartPos || draggingAudioItem || audioDragStartPos || draggingVideoItem || videoDragStartPos || draggingImageItem || imageDragStartPos) return;
         setIsScrubbing(true);
         updateScrub(e);
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
@@ -498,6 +506,8 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
             handleAudioDragMove(e);
         } else if (videoDragStartPos || draggingVideoItem) {
             handleVideoDragMove(e);
+        } else if (imageDragStartPos || draggingImageItem) {
+            handleImageDragMove(e);
         } else if (isScrubbing) {
             updateScrub(e);
         }
@@ -512,6 +522,8 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
             handleAudioDragEnd(e);
         } else if (draggingVideoItem || videoDragStartPos) {
             handleVideoDragEnd(e);
+        } else if (draggingImageItem || imageDragStartPos) {
+            handleImageDragEnd(e);
         } else {
             setIsScrubbing(false);
             (e.currentTarget as Element).releasePointerCapture(e.pointerId);
@@ -823,13 +835,14 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         (e.target as Element).releasePointerCapture(e.pointerId);
     };
 
-    // Video drag handlers (using window events for reliable mobile support)
+    // Video drag handlers (same pattern as text/audio)
     const handleVideoDragStart = (e: React.PointerEvent, clip: MediaFile) => {
         e.preventDefault();
         e.stopPropagation();
         setVideoDragStartPos({ x: e.clientX, y: e.clientY, clipId: clip.id });
         startXRef.current = e.clientX;
         videoDragOffsetRef.current = 0;
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
     };
 
     // Update video drag - reorder when crossing midpoints
@@ -915,58 +928,112 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
         }
     }, [dispatch, timelineZoom]);
 
-    // Window-level event handlers for video drag (more reliable on mobile)
-    useEffect(() => {
-        if (!videoDragStartPos) return;
-        
-        const handleGlobalMove = (e: PointerEvent) => {
-            e.preventDefault();
-            
-            const deltaX = Math.abs(e.clientX - videoDragStartPos.x);
-            const deltaY = Math.abs(e.clientY - videoDragStartPos.y);
-            const DRAG_THRESHOLD = 5;
-            
-            // Start dragging if moved enough
-            if (!draggingVideoItemRef.current && (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD)) {
-                const clip = mediaFilesRef.current.find(c => c.id === videoDragStartPos.clipId);
-                if (clip) {
-                    setDraggingVideoItem({ id: clip.id, startPosition: clip.positionStart });
-                    startAutoScroll();
-                }
-            }
-            
-            if (draggingVideoItemRef.current) {
-                lastPointerXRef.current = e.clientX;
-                updateVideoDrag(e.clientX);
-            }
-        };
-        
-        const handleGlobalUp = () => {
-            setDraggingVideoItem(null);
-            setVideoDragStartPos(null);
-            videoDragOffsetRef.current = 0;
-            forceRender(n => n + 1);
-            stopAutoScroll();
-        };
-        
-        window.addEventListener('pointermove', handleGlobalMove, { passive: false });
-        window.addEventListener('pointerup', handleGlobalUp);
-        window.addEventListener('pointercancel', handleGlobalUp);
-        
-        return () => {
-            window.removeEventListener('pointermove', handleGlobalMove);
-            window.removeEventListener('pointerup', handleGlobalUp);
-            window.removeEventListener('pointercancel', handleGlobalUp);
-        };
-    }, [videoDragStartPos, updateVideoDrag, startAutoScroll, stopAutoScroll]);
-
-    // Legacy handlers for container-level events (kept for compatibility)
     const handleVideoDragMove = (e: React.PointerEvent) => {
-        // Now handled by window events
+        if (!videoDragStartPos) return;
+        e.stopPropagation();
+        e.preventDefault(); // Prevent scroll during drag
+        
+        // Update pointer position for auto-scroll
+        lastPointerXRef.current = e.clientX;
+        
+        const deltaX = Math.abs(e.clientX - videoDragStartPos.x);
+        const deltaY = Math.abs(e.clientY - videoDragStartPos.y);
+        const DRAG_THRESHOLD = 5; // pixels
+        
+        // Only start dragging if user has moved enough
+        if (!draggingVideoItem && (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD)) {
+            const clip = mediaFilesRef.current.find(c => c.id === videoDragStartPos.clipId);
+            if (clip) {
+                setDraggingVideoItem({ id: clip.id, startPosition: clip.positionStart });
+                startAutoScroll();
+            }
+        }
+        
+        if (draggingVideoItem) {
+            updateVideoDrag(e.clientX);
+        }
     };
 
     const handleVideoDragEnd = (e: React.PointerEvent) => {
-        // Now handled by window events
+        setDraggingVideoItem(null);
+        setVideoDragStartPos(null);
+        videoDragOffsetRef.current = 0;
+        forceRender(n => n + 1);
+        stopAutoScroll();
+        (e.target as Element).releasePointerCapture(e.pointerId);
+    };
+
+    // Image drag handlers (same pattern as audio)
+    const handleImageDragStart = (e: React.PointerEvent, clip: MediaFile) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setImageDragStartPos({ x: e.clientX, y: e.clientY, clipId: clip.id });
+        startXRef.current = e.clientX;
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    };
+
+    const lastImageDragUpdateRef = useRef<number>(0);
+    const updateImageDrag = useCallback((clientX: number) => {
+        // Throttle to ~30fps (33ms)
+        const now = Date.now();
+        if (now - lastImageDragUpdateRef.current < 33) return;
+        lastImageDragUpdateRef.current = now;
+        
+        const currentDraggingItem = draggingImageItemRef.current;
+        if (!currentDraggingItem) return;
+        
+        const currentFiles = mediaFilesRef.current;
+        const clip = currentFiles.find(c => c.id === currentDraggingItem.id);
+        if (!clip) return;
+
+        const deltaX = clientX - startXRef.current;
+        const deltaSeconds = deltaX / timelineZoom;
+        const newPositionStart = Math.max(0, currentDraggingItem.startPosition + deltaSeconds);
+        const duration = clip.positionEnd - clip.positionStart;
+
+        // Snap to frame boundaries and nearby clip edges
+        const allMediaFiles = currentFiles.filter(m => m.type === 'video' || m.type === 'audio' || m.type === 'image');
+        const snappedStart = snapTime(newPositionStart, clip, allMediaFiles, true);
+        const snappedEnd = snappedStart + duration;
+
+        dispatch(setMediaFiles(currentFiles.map(m => 
+            m.id === currentDraggingItem.id 
+                ? { ...m, positionStart: snappedStart, positionEnd: snappedEnd }
+                : m
+        )));
+    }, [dispatch, timelineZoom, snapTime]);
+
+    const handleImageDragMove = (e: React.PointerEvent) => {
+        if (!imageDragStartPos) return;
+        e.stopPropagation();
+        e.preventDefault(); // Prevent scroll during drag
+        
+        // Update pointer position for auto-scroll
+        lastPointerXRef.current = e.clientX;
+        
+        const deltaX = Math.abs(e.clientX - imageDragStartPos.x);
+        const deltaY = Math.abs(e.clientY - imageDragStartPos.y);
+        const DRAG_THRESHOLD = 5; // pixels
+        
+        // Only start dragging if user has moved enough
+        if (!draggingImageItem && (deltaX > DRAG_THRESHOLD || deltaY > DRAG_THRESHOLD)) {
+            const clip = mediaFilesRef.current.find(c => c.id === imageDragStartPos.clipId);
+            if (clip) {
+                setDraggingImageItem({ id: clip.id, startPosition: clip.positionStart });
+                startAutoScroll();
+            }
+        }
+        
+        if (draggingImageItem) {
+            updateImageDrag(e.clientX);
+        }
+    };
+
+    const handleImageDragEnd = (e: React.PointerEvent) => {
+        setDraggingImageItem(null);
+        setImageDragStartPos(null);
+        stopAutoScroll();
+        (e.target as Element).releasePointerCapture(e.pointerId);
     };
 
     // Mobile: Track if we're currently scrolling (to prevent scroll/time update loops)
@@ -1135,6 +1202,8 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                             handleAudioDragMove(e);
                         } else if (videoDragStartPos || draggingVideoItem) {
                             handleVideoDragMove(e);
+                        } else if (imageDragStartPos || draggingImageItem) {
+                            handleImageDragMove(e);
                         }
                     }}
                     onPointerUp={(e) => {
@@ -1147,6 +1216,8 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                             handleAudioDragEnd(e);
                         } else if (draggingVideoItem || videoDragStartPos) {
                             handleVideoDragEnd(e);
+                        } else if (draggingImageItem || imageDragStartPos) {
+                            handleImageDragEnd(e);
                         }
                     }}
                     onPointerLeave={(e) => {
@@ -1159,6 +1230,8 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                             handleAudioDragEnd(e);
                         } else if (draggingVideoItem || videoDragStartPos) {
                             handleVideoDragEnd(e);
+                        } else if (draggingImageItem || imageDragStartPos) {
+                            handleImageDragEnd(e);
                         }
                     }}
                 >
@@ -1280,6 +1353,62 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                                     onPointerDown={(e) => {
                                                         e.stopPropagation();
                                                         handleResizeStart(e, clip.id, 'clip', audioWidth);
+                                                    }}
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                            </div>
+                        )}
+
+                        {/* Image Track - Compact (Mobile) */}
+                        {mediaFiles.filter((clip) => clip.type === 'image').length > 0 && (
+                            <div className="flex items-center h-6 gap-0.5 relative" onClick={(e) => e.stopPropagation()}>
+                                {mediaFiles
+                                    .filter((clip) => clip.type === 'image')
+                                    .map((clip) => {
+                                        const imageDuration = clip.positionEnd - clip.positionStart;
+                                        const imageWidth = imageDuration * timelineZoom;
+                                        const isDraggingImage = draggingImageItem?.id === clip.id;
+                                        return (
+                                            <div
+                                                key={clip.id}
+                                                className={`timeline-clip absolute h-6 rounded-md border flex items-center px-1.5 touch-none select-none overflow-hidden cursor-grab active:cursor-grabbing
+                                                    ${isDraggingImage ? 'opacity-90 ring-2 ring-emerald-400 z-30' : ''}
+                                                    ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'bg-emerald-600 border-emerald-400 border-2' : 'bg-gradient-to-r from-emerald-900/60 to-emerald-800/40 border-emerald-500/30'}
+                                                `}
+                                                style={{
+                                                    left: `${clip.positionStart * timelineZoom}px`,
+                                                    width: `${Math.max(imageWidth, 28)}px`,
+                                                }}
+                                                onPointerDown={(e) => {
+                                                    e.stopPropagation();
+                                                    if ((e.target as HTMLElement).closest('.resize-handle')) return;
+                                                    const allMediaIndex = mediaFiles.findIndex(m => m.id === clip.id);
+                                                    dispatch(setActiveElement('media'));
+                                                    dispatch(setActiveElementIndex(allMediaIndex));
+                                                    handleImageDragStart(e, clip);
+                                                }}
+                                            >
+                                                {clip.src && (
+                                                    <img 
+                                                        src={clip.src} 
+                                                        alt={clip.fileName}
+                                                        className="absolute inset-0 w-full h-full object-cover opacity-50"
+                                                    />
+                                                )}
+                                                <div className="relative z-10 flex items-center">
+                                                    <svg className="w-2.5 h-2.5 text-emerald-300 mr-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                    </svg>
+                                                    <span className="text-[8px] text-emerald-100 truncate font-medium pr-4">{clip.fileName}</span>
+                                                </div>
+                                                {/* Resize Handle */}
+                                                <div 
+                                                    className="resize-handle absolute right-0 top-0 bottom-0 w-4 cursor-col-resize bg-emerald-500/0 active:bg-emerald-500/50 touch-none z-20"
+                                                    onPointerDown={(e) => {
+                                                        e.stopPropagation();
+                                                        handleResizeStart(e, clip.id, 'clip', imageWidth);
                                                     }}
                                                 />
                                             </div>
@@ -1759,6 +1888,89 @@ export const Timeline = ({ isMobile = false }: TimelineProps) => {
                                                 }}
                                             >
                                                 <div className="w-0.5 h-4 bg-blue-400/50 rounded-full"></div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                        </div>
+                    )}
+
+                    {/* Track 4: Images */}
+                    {mediaFiles.filter((clip) => clip.type === 'image').length > 0 && (
+                        <div className="flex items-center h-10 gap-0.5 relative mt-1" onClick={(e) => e.stopPropagation()}>
+                            {mediaFiles
+                                .filter((clip) => clip.type === 'image')
+                                .map((clip) => {
+                                    const imageDuration = clip.positionEnd - clip.positionStart;
+                                    const imageWidth = imageDuration * timelineZoom;
+                                    const isDraggingImage = draggingImageItem?.id === clip.id;
+                                    return (
+                                        <div 
+                                            key={clip.id}
+                                            className={`group relative h-10 bg-emerald-900/30 rounded-md border overflow-hidden select-none cursor-grab active:cursor-grabbing touch-none
+                                                ${isDraggingImage ? 'opacity-90 ring-2 ring-emerald-400 z-30' : ''}
+                                                ${resizingItem?.id === clip.id ? 'ring-2 ring-emerald-500 z-20 border-emerald-500' : ''}
+                                                ${activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 'border-2 border-white z-20 shadow-lg shadow-white/20' : 'border border-emerald-500/30 hover:border-emerald-400'}
+                                            `}
+                                            style={{ 
+                                                width: `${imageWidth}px`, 
+                                                left: `${clip.positionStart * timelineZoom}px`, 
+                                                position: 'absolute',
+                                                zIndex: isDraggingImage ? 30 : (activeElement === 'media' && mediaFiles[activeElementIndex]?.id === clip.id ? 20 : 10),
+                                                transition: (resizingItem?.id === clip.id || isDraggingImage) ? 'none' : 'width 0.1s ease-out, left 0.1s ease-out'
+                                            }}
+                                            title={clip.fileName}
+                                            onPointerDown={(e) => {
+                                                e.stopPropagation();
+                                                // Don't start drag if clicking on resize handle or delete button
+                                                if ((e.target as HTMLElement).closest('.resize-handle') || 
+                                                    (e.target as HTMLElement).closest('button')) {
+                                                    return;
+                                                }
+                                                
+                                                // Select the image element
+                                                const allMediaIndex = mediaFiles.findIndex(m => m.id === clip.id);
+                                                dispatch(setActiveElement('media'));
+                                                dispatch(setActiveElementIndex(allMediaIndex));
+                                                
+                                                handleImageDragStart(e, clip);
+                                            }}
+                                        >
+                                            {/* Image thumbnail preview */}
+                                            {clip.src && (
+                                                <img 
+                                                    src={clip.src} 
+                                                    alt={clip.fileName}
+                                                    className="absolute inset-0 w-full h-full object-cover opacity-60"
+                                                />
+                                            )}
+                                            {/* Image Icon and Label */}
+                                            <div className="absolute top-0 left-0 right-0 h-full flex items-center px-2 pointer-events-none z-10 bg-gradient-to-r from-emerald-900/80 to-transparent">
+                                                <svg className="w-3 h-3 mr-1 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                </svg>
+                                                <span className="text-[10px] text-emerald-200 truncate font-medium">{clip.fileName}</span>
+                                            </div>
+                                            {/* Delete Button */}
+                                            <button 
+                                                className="absolute right-1 top-1 p-1 bg-black/60 hover:bg-red-500 text-white rounded cursor-pointer z-30 transition-colors opacity-0 group-hover:opacity-100" 
+                                                title="Remove Image"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleDelete(clip);
+                                                }}
+                                            >
+                                                <X className="w-3 h-3" />
+                                            </button>
+                                            {/* Resize Handle */}
+                                            <div 
+                                                className="resize-handle absolute right-0 top-0 bottom-0 w-6 cursor-col-resize hover:bg-emerald-400/50 active:bg-emerald-400/70 transition-colors z-20 touch-none flex items-center justify-center"
+                                                onPointerDown={(e) => {
+                                                    e.stopPropagation();
+                                                    handleResizeStart(e, clip.id, 'clip', imageWidth);
+                                                }}
+                                            >
+                                                <div className="w-0.5 h-4 bg-emerald-400/50 rounded-full"></div>
                                             </div>
                                         </div>
                                     );

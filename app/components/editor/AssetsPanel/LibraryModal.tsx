@@ -2,21 +2,33 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { LibraryItem, MediaType } from "@/app/types";
-import { listUserMediaFiles, deleteMediaFile } from "@/app/services/mediaLibraryService";
+import { LibraryItem, MediaType, MediaFolder } from "@/app/types";
+import { 
+    listUserMediaFilesInFolder, 
+    deleteMediaFileFromFolder, 
+    listFolders, 
+    createFolder, 
+    deleteFolder,
+    moveFiles,
+    uploadVideoThumbnail,
+} from "@/app/services/mediaLibraryService";
+import { extractThumbnail } from "@/app/utils/extractThumbnail";
 import { useAuth } from "@/app/contexts/AuthContext";
-import { X, Loader2, Upload, CheckCircle, XCircle, Film, Image as ImageIcon, Music, Trash2, HardDrive, Crown } from "lucide-react";
+import { X, Loader2, Upload, CheckCircle, XCircle, Film, Image as ImageIcon, Music, Trash2, HardDrive, Crown, FolderPlus, Folder, ChevronRight, Home, MoreVertical, FolderInput, CloudUpload } from "lucide-react";
 import toast from "react-hot-toast";
 import { createClient } from "@/app/utils/supabase/client";
 import { categorizeFile } from "@/app/utils/utils";
 import { checkStorageLimit, validateUpload, formatBytes, StorageLimitInfo } from "@/app/services/subscriptionService";
+import { uploadWithTus, requestSignedUploadUrl } from "@/app/utils/resumableUpload";
 
-type LibraryType = 'media' | 'audio';
+type LibraryType = 'media' | 'video' | 'audio' | 'image';
 
 interface LibraryModalProps {
     isOpen: boolean;
     onClose: () => void;
     onAddToTimeline: (items: LibraryItem[]) => void;
+    onSelectFolders?: (folders: MediaFolder[]) => void; // Optional callback for folder selection
+    allowFolderSelection?: boolean; // Enable folder selection mode
     type: LibraryType;
 }
 
@@ -42,6 +54,14 @@ const CONFIG = {
         emptyIcon: Film,
         filterFn: (item: LibraryItem) => item.type !== 'audio',
     },
+    video: {
+        title: 'Video Library',
+        accept: 'video/*',
+        emptyMessage: 'No videos yet',
+        emptySubMessage: 'Upload videos to get started',
+        emptyIcon: Film,
+        filterFn: (item: LibraryItem) => item.type === 'video',
+    },
     audio: {
         title: 'Audio Library',
         accept: 'audio/*',
@@ -50,19 +70,38 @@ const CONFIG = {
         emptyIcon: Music,
         filterFn: (item: LibraryItem) => item.type === 'audio',
     },
+    image: {
+        title: 'Image Library',
+        accept: 'image/*',
+        emptyMessage: 'No images yet',
+        emptySubMessage: 'Upload images to get started',
+        emptyIcon: ImageIcon,
+        filterFn: (item: LibraryItem) => item.type === 'image',
+    },
 };
 
-export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: LibraryModalProps) {
+export function LibraryModal({ isOpen, onClose, onAddToTimeline, onSelectFolders, allowFolderSelection = false, type }: LibraryModalProps) {
     const { user } = useAuth();
     const [items, setItems] = useState<LibraryItem[]>([]);
+    const [folders, setFolders] = useState<MediaFolder[]>([]);
+    const [currentFolder, setCurrentFolder] = useState<string | null>(null);
     const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+    const [selectedFolderPaths, setSelectedFolderPaths] = useState<Set<string>>(new Set()); // For folder selection
     const [isLoading, setIsLoading] = useState(false);
     const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
     const [deletingItems, setDeletingItems] = useState<Set<string>>(new Set());
+    const [deletingFolders, setDeletingFolders] = useState<Set<string>>(new Set());
     const [isDeletingSelected, setIsDeletingSelected] = useState(false);
     const [storageInfo, setStorageInfo] = useState<StorageLimitInfo | null>(null);
     const [mounted, setMounted] = useState(false);
+    const [showCreateFolder, setShowCreateFolder] = useState(false);
+    const [newFolderName, setNewFolderName] = useState("");
+    const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+    const [showMoveDialog, setShowMoveDialog] = useState(false);
+    const [isMovingFiles, setIsMovingFiles] = useState(false);
+    const [allFolders, setAllFolders] = useState<MediaFolder[]>([]); // All folders for move dialog
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const folderInputRef = useRef<HTMLInputElement>(null);
     
     // Mount check for portal
     useEffect(() => {
@@ -71,6 +110,9 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
 
     const config = CONFIG[type];
     const usagePercentage = storageInfo ? Math.min((storageInfo.usedBytes / storageInfo.limitBytes) * 100, 100) : 0;
+    
+    // Parse current folder path for breadcrumbs
+    const folderPath = currentFolder ? currentFolder.split('/') : [];
 
     useEffect(() => {
         if (isOpen && user) {
@@ -78,6 +120,22 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
             loadStorageInfo();
         }
     }, [isOpen, user]);
+    
+    // Reset folder when modal closes
+    useEffect(() => {
+        if (!isOpen) {
+            setCurrentFolder(null);
+            setSelectedItems(new Set());
+            setSelectedFolderPaths(new Set());
+        }
+    }, [isOpen]);
+    
+    // Reload when folder changes
+    useEffect(() => {
+        if (isOpen && user) {
+            loadLibraryItems();
+        }
+    }, [currentFolder]);
 
     const loadStorageInfo = async () => {
         if (!user) return;
@@ -105,9 +163,25 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
         if (!user) return;
         setIsLoading(true);
         try {
-            const libraryItems = await listUserMediaFiles(user.id);
-            const filteredItems = libraryItems.filter(config.filterFn);
+            // Load folders and files in parallel
+            const [libraryItems, folderList] = await Promise.all([
+                listUserMediaFilesInFolder(user.id, currentFolder || undefined),
+                listFolders(user.id, currentFolder || undefined)
+            ]);
+            // Filter by type and exclude AI reference copies and system files:
+            // - Files starting with "reference_" (downloaded from URLs)
+            // - Files from _ai_ref folder (uploaded through AI analysis)
+            // - Thumbnail files (ending with _thumb.jpg)
+            const filteredItems = libraryItems
+                .filter(config.filterFn)
+                .filter(item => !item.name.startsWith('reference_'))
+                .filter(item => !item.folder?.includes('_ai_ref'))
+                .filter(item => !item.name.includes('_thumb.'));
+            // Filter out _ai_ref folders from the folder list
+            // Note: thumbnails folder is storage-only (not in database), so it won't appear here
+            const filteredFolders = folderList.filter(f => !f.path.includes('_ai_ref'));
             setItems(filteredItems);
+            setFolders(filteredFolders);
         } catch (error) {
             console.error('Error loading library items:', error);
             toast.error('Failed to load library items');
@@ -126,19 +200,38 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
         setSelectedItems(newSelected);
     };
 
+    const toggleFolderSelection = (folderPath: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        const newSelected = new Set(selectedFolderPaths);
+        if (newSelected.has(folderPath)) {
+            newSelected.delete(folderPath);
+        } else {
+            newSelected.add(folderPath);
+        }
+        setSelectedFolderPaths(newSelected);
+    };
+
     const [isAddingToTimeline, setIsAddingToTimeline] = useState(false);
 
     const handleAdd = () => {
         const selected = items.filter(item => selectedItems.has(item.id));
-        if (selected.length === 0) {
-            toast.error('Please select at least one item');
+        const selectedFolders = folders.filter(f => selectedFolderPaths.has(f.path));
+        
+        if (selected.length === 0 && selectedFolders.length === 0) {
+            toast.error('Please select at least one item or folder');
             return;
         }
         setIsAddingToTimeline(true);
         // Small delay to show the button state change before modal closes
         setTimeout(() => {
-            onAddToTimeline(selected);
+            if (selected.length > 0) {
+                onAddToTimeline(selected);
+            }
+            if (selectedFolders.length > 0 && onSelectFolders) {
+                onSelectFolders(selectedFolders);
+            }
             setSelectedItems(new Set());
+            setSelectedFolderPaths(new Set());
             setIsAddingToTimeline(false);
             onClose();
         }, 100);
@@ -147,83 +240,90 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
     const uploadFileWithProgress = useCallback(async (
         file: File,
         uploadId: string,
-        userId: string
+        userId: string,
+        folder?: string | null
     ): Promise<LibraryItem | null> => {
         const supabase = createClient();
-        const userFolder = userId;
-        const fileId = crypto.randomUUID();
-        const fileExt = file.name.split('.').pop() || 'mp4';
-        // Encode original filename (without extension) in the storage path for reliable retrieval
-        const originalNameWithoutExt = file.name.replace(/\.[^/.]+$/, '');
-        const encodedName = btoa(encodeURIComponent(originalNameWithoutExt));
-        const fileName = `${fileId}--${encodedName}.${fileExt}`;
-        const filePath = `${userFolder}/${fileName}`;
+        const TUS_THRESHOLD = 6 * 1024 * 1024; // 6MB - use TUS for files larger than this
 
-        // Validate upload against server-side storage limits
         try {
-            const validation = await validateUpload(file.size);
-            if (!validation.canUpload) {
+            // 1. Request upload path from backend (validates auth, type, storage limits)
+            let uploadData: { token: string; path: string; fileId: string; signedUrl: string };
+            try {
+                uploadData = await requestSignedUploadUrl(file.name, file.size, file.type, folder);
+            } catch (error: any) {
                 setUploadingFiles(prev => prev.map(f => 
                     f.id === uploadId 
-                        ? { ...f, status: 'error', error: validation.error || 'Upload not allowed' }
+                        ? { ...f, status: 'error', error: error.message || 'Upload not allowed' }
                         : f
                 ));
                 return null;
             }
-        } catch (validationError) {
-            console.error('Upload validation error:', validationError);
-            setUploadingFiles(prev => prev.map(f => 
-                f.id === uploadId 
-                    ? { ...f, status: 'error', error: 'Failed to validate upload' }
-                    : f
-            ));
-            return null;
-        }
 
-        try {
-            // Use XMLHttpRequest for progress tracking
+            const { path: filePath, fileId } = uploadData;
+
+            // Get session for authentication
             const { data: { session } } = await supabase.auth.getSession();
             if (!session) {
                 throw new Error('Not authenticated');
             }
 
-            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-            const uploadUrl = `${supabaseUrl}/storage/v1/object/${STORAGE_BUCKET}/${filePath}`;
-
-            await new Promise<void>((resolve, reject) => {
-                const xhr = new XMLHttpRequest();
-                
-                xhr.upload.addEventListener('progress', (event) => {
-                    if (event.lengthComputable) {
-                        const percentComplete = Math.round((event.loaded / event.total) * 100);
+            // 2. Upload file - use TUS for large files, XHR for small files
+            if (file.size > TUS_THRESHOLD) {
+                // Use TUS resumable upload for large files
+                await uploadWithTus({
+                    file,
+                    accessToken: session.access_token,
+                    objectPath: filePath,
+                    onProgress: (bytesUploaded, bytesTotal) => {
+                        const percentComplete = Math.round((bytesUploaded / bytesTotal) * 100);
                         setUploadingFiles(prev => prev.map(f => 
                             f.id === uploadId 
                                 ? { ...f, progress: percentComplete }
                                 : f
                         ));
-                    }
+                    },
                 });
+            } else {
+                // Use standard XHR upload for small files (faster, single request)
+                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+                const uploadUrl = `${supabaseUrl}/storage/v1/object/${STORAGE_BUCKET}/${filePath}`;
 
-                xhr.addEventListener('load', () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        resolve();
-                    } else {
-                        reject(new Error(`Upload failed: ${xhr.statusText}`));
-                    }
+                await new Promise<void>((resolve, reject) => {
+                    const xhr = new XMLHttpRequest();
+                    
+                    xhr.upload.addEventListener('progress', (event) => {
+                        if (event.lengthComputable) {
+                            const percentComplete = Math.round((event.loaded / event.total) * 100);
+                            setUploadingFiles(prev => prev.map(f => 
+                                f.id === uploadId 
+                                    ? { ...f, progress: percentComplete }
+                                    : f
+                            ));
+                        }
+                    });
+
+                    xhr.addEventListener('load', () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            resolve();
+                        } else {
+                            reject(new Error(`Upload failed: ${xhr.statusText}`));
+                        }
+                    });
+
+                    xhr.addEventListener('error', () => {
+                        reject(new Error('Upload failed'));
+                    });
+
+                    xhr.open('POST', uploadUrl);
+                    xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
+                    xhr.setRequestHeader('x-upsert', 'false');
+                    xhr.setRequestHeader('x-metadata', JSON.stringify({ originalName: file.name }));
+                    xhr.send(file);
                 });
+            }
 
-                xhr.addEventListener('error', () => {
-                    reject(new Error('Upload failed'));
-                });
-
-                xhr.open('POST', uploadUrl);
-                xhr.setRequestHeader('Authorization', `Bearer ${session.access_token}`);
-                xhr.setRequestHeader('x-upsert', 'false');
-                xhr.setRequestHeader('x-metadata', JSON.stringify({ originalName: file.name }));
-                xhr.send(file);
-            });
-
-            // Get signed URL for the uploaded file
+            // 3. Get signed URL for the uploaded file
             const { data: signedUrlData, error: urlError } = await supabase.storage
                 .from(STORAGE_BUCKET)
                 .createSignedUrl(filePath, 3600);
@@ -232,7 +332,19 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
                 throw urlError;
             }
 
-            // Update status to completed
+            // 4. For video files, extract and upload a thumbnail
+            let thumbnailUrl: string | null = null;
+            const mediaType = categorizeFile(file.type);
+            if (mediaType === 'video') {
+                try {
+                    const thumbnail = await extractThumbnail(file, fileId);
+                    thumbnailUrl = await uploadVideoThumbnail(thumbnail, userId, fileId, folder || undefined);
+                } catch (thumbnailError) {
+                    console.warn('Failed to extract thumbnail:', thumbnailError);
+                }
+            }
+
+            // 5. Update status to completed
             setUploadingFiles(prev => prev.map(f => 
                 f.id === uploadId 
                     ? { ...f, status: 'completed', progress: 100 }
@@ -244,9 +356,11 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
                 name: file.name,
                 url: signedUrlData.signedUrl,
                 status: 'completed',
-                type: categorizeFile(file.type),
+                type: mediaType,
                 size: file.size,
                 createdAt: new Date().toISOString(),
+                folder: folder || null,
+                thumbnailUrl,
             };
         } catch (error: any) {
             console.error('Upload error:', error);
@@ -258,6 +372,125 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
             return null;
         }
     }, []);
+    
+    const handleCreateFolder = async () => {
+        if (!user || !newFolderName.trim()) return;
+        
+        setIsCreatingFolder(true);
+        try {
+            await createFolder(user.id, newFolderName.trim(), currentFolder || undefined);
+            toast.success(`Folder "${newFolderName}" created`);
+            setNewFolderName("");
+            setShowCreateFolder(false);
+            await loadLibraryItems();
+        } catch (error: any) {
+            console.error('Error creating folder:', error);
+            toast.error(error.message || 'Failed to create folder');
+        } finally {
+            setIsCreatingFolder(false);
+        }
+    };
+    
+    const handleDeleteFolder = async (folder: MediaFolder) => {
+        if (!user) return;
+        
+        setDeletingFolders(prev => new Set(prev).add(folder.path));
+        try {
+            await deleteFolder(user.id, folder.path);
+            toast.success(`Folder "${folder.name}" deleted`);
+            await loadLibraryItems();
+        } catch (error: any) {
+            console.error('Error deleting folder:', error);
+            toast.error(error.message || 'Failed to delete folder');
+        } finally {
+            setDeletingFolders(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(folder.path);
+                return newSet;
+            });
+        }
+    };
+    
+    const navigateToFolder = (folder: MediaFolder | null) => {
+        setSelectedItems(new Set());
+        setCurrentFolder(folder?.path || null);
+    };
+    
+    const navigateUp = () => {
+        if (!currentFolder) return;
+        const parts = currentFolder.split('/');
+        parts.pop();
+        setSelectedItems(new Set());
+        setCurrentFolder(parts.length > 0 ? parts.join('/') : null);
+    };
+    
+    const navigateToBreadcrumb = (index: number) => {
+        if (index < 0) {
+            setCurrentFolder(null);
+        } else {
+            setCurrentFolder(folderPath.slice(0, index + 1).join('/'));
+        }
+        setSelectedItems(new Set());
+    };
+
+    // Load all folders recursively for the move dialog
+    const loadAllFolders = async () => {
+        if (!user) return;
+        
+        const allFoldersList: MediaFolder[] = [];
+        
+        const loadFoldersRecursive = async (parentPath?: string) => {
+            const folderList = await listFolders(user.id, parentPath);
+            for (const folder of folderList) {
+                allFoldersList.push(folder);
+                await loadFoldersRecursive(folder.path);
+            }
+        };
+        
+        await loadFoldersRecursive();
+        setAllFolders(allFoldersList);
+    };
+
+    const handleOpenMoveDialog = async () => {
+        if (selectedItems.size === 0) {
+            toast.error('Please select files to move');
+            return;
+        }
+        await loadAllFolders();
+        setShowMoveDialog(true);
+    };
+
+    const handleMoveFiles = async (destinationFolder: string | null) => {
+        if (!user || selectedItems.size === 0) return;
+        
+        setIsMovingFiles(true);
+        try {
+            const filesToMove = items
+                .filter(item => selectedItems.has(item.id))
+                .map(item => ({
+                    id: item.id,
+                    name: item.name,
+                    currentFolder: item.folder || null,
+                }));
+
+            const result = await moveFiles(filesToMove, destinationFolder);
+            
+            if (result.moved > 0) {
+                toast.success(`Moved ${result.moved} file${result.moved !== 1 ? 's' : ''}`);
+                setSelectedItems(new Set());
+                await loadLibraryItems();
+            }
+            if (result.failed > 0) {
+                toast.error(`Failed to move ${result.failed} file${result.failed !== 1 ? 's' : ''}`);
+            }
+        } catch (error: any) {
+            console.error('Error moving files:', error);
+            toast.error(error.message || 'Failed to move files');
+        } finally {
+            setIsMovingFiles(false);
+            setShowMoveDialog(false);
+        }
+    };
 
     const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
@@ -282,16 +515,39 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
         setUploadingFiles(prev => [...prev, ...newUploads]);
         e.target.value = "";
 
-        // Upload all files in parallel
-        const uploadPromises = newUploads.map(upload => 
-            uploadFileWithProgress(upload.file, upload.id, user.id)
-        );
-
-        const results = await Promise.all(uploadPromises);
+        // Upload files in batches of 10 for better stability with many files
+        const BATCH_SIZE = 10;
+        const results: (LibraryItem | null)[] = [];
+        
+        for (let i = 0; i < newUploads.length; i += BATCH_SIZE) {
+            const batch = newUploads.slice(i, i + BATCH_SIZE);
+            const batchResults = await Promise.all(
+                batch.map(upload => 
+                    uploadFileWithProgress(upload.file, upload.id, user.id, currentFolder)
+                )
+            );
+            results.push(...batchResults);
+            
+            // Show progress for large uploads
+            if (newUploads.length > BATCH_SIZE) {
+                const completedBatches = Math.min(i + BATCH_SIZE, newUploads.length);
+                const batchSuccessCount = batchResults.filter(r => r !== null).length;
+                if (batchSuccessCount > 0) {
+                    toast.success(`Uploaded batch ${Math.floor(i / BATCH_SIZE) + 1}: ${batchSuccessCount} file${batchSuccessCount > 1 ? 's' : ''} (${completedBatches}/${newUploads.length} total)`);
+                }
+            }
+        }
+        
         const successCount = results.filter(r => r !== null).length;
 
         if (successCount > 0) {
-            toast.success(`Successfully uploaded ${successCount} file${successCount > 1 ? 's' : ''}`);
+            if (newUploads.length <= BATCH_SIZE) {
+                // Single batch - show simple message
+                toast.success(`Successfully uploaded ${successCount} file${successCount > 1 ? 's' : ''}`);
+            } else {
+                // Multiple batches - show final summary
+                toast.success(`Upload complete: ${successCount}/${newUploads.length} files uploaded successfully`);
+            }
             await loadLibraryItems();
             await loadStorageInfo(); // Refresh storage usage
         }
@@ -313,7 +569,7 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
         setDeletingItems(prev => new Set(prev).add(item.id));
         
         try {
-            await deleteMediaFile(item.id, user.id, item.name);
+            await deleteMediaFileFromFolder(item.id, user.id, item.name, item.folder || undefined);
             setItems(prev => prev.filter(i => i.id !== item.id));
             setSelectedItems(prev => {
                 const newSet = new Set(prev);
@@ -341,7 +597,7 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
         
         const itemsToDelete = items.filter(item => selectedItems.has(item.id));
         const deletePromises = itemsToDelete.map(item => 
-            deleteMediaFile(item.id, user.id, item.name)
+            deleteMediaFileFromFolder(item.id, user.id, item.name, item.folder || undefined)
                 .then(() => ({ id: item.id, success: true }))
                 .catch(() => ({ id: item.id, success: false }))
         );
@@ -390,12 +646,23 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
 
     const renderItemPreview = (item: LibraryItem) => {
         if (item.type === 'video') {
+            // Use thumbnail if available, otherwise show placeholder
+            if (item.thumbnailUrl) {
+                return (
+                    <img
+                        src={item.thumbnailUrl}
+                        alt={item.name}
+                        className="w-full h-full object-cover rounded-t-lg"
+                        loading="lazy"
+                    />
+                );
+            }
+            // No thumbnail available - show placeholder with video icon
             return (
-                <video
-                    src={item.url}
-                    className="w-full h-full object-cover rounded-t-lg"
-                    muted
-                />
+                <div className="w-full h-full flex flex-col items-center justify-center bg-slate-800 rounded-t-lg">
+                    <Film className="w-10 h-10 text-slate-500 mb-1" />
+                    <span className="text-xs text-slate-500">No preview</span>
+                </div>
             );
         }
         if (item.type === 'image') {
@@ -404,6 +671,7 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
                     src={item.url}
                     alt={item.name}
                     className="w-full h-full object-cover rounded-t-lg"
+                    loading="lazy"
                 />
             );
         }
@@ -465,6 +733,14 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
                         )}
                     </div>
                     <div className="flex items-center gap-2 sm:gap-3">
+                        <button
+                            onClick={() => setShowCreateFolder(true)}
+                            className="flex items-center gap-2 px-3 sm:px-4 py-2 text-sm bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                            title="Create new folder"
+                        >
+                            <FolderPlus className="w-4 h-4" />
+                            <span className="hidden sm:inline">New Folder</span>
+                        </button>
                         <button
                             onClick={handleUploadClick}
                             disabled={isUploading}
@@ -572,29 +848,186 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
                     </div>
                 )}
 
+                {/* Create Folder Modal */}
+                {showCreateFolder && (
+                    <div className="p-4 border-b border-slate-800 bg-slate-900/50">
+                        <div className="flex items-center gap-3">
+                            <Folder className="w-5 h-5 text-slate-400" />
+                            <input
+                                ref={folderInputRef}
+                                type="text"
+                                value={newFolderName}
+                                onChange={(e) => setNewFolderName(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleCreateFolder();
+                                    if (e.key === 'Escape') {
+                                        setShowCreateFolder(false);
+                                        setNewFolderName("");
+                                    }
+                                }}
+                                placeholder="Folder name..."
+                                className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                autoFocus
+                            />
+                            <button
+                                onClick={handleCreateFolder}
+                                disabled={!newFolderName.trim() || isCreatingFolder}
+                                className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                                {isCreatingFolder ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                    "Create"
+                                )}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowCreateFolder(false);
+                                    setNewFolderName("");
+                                }}
+                                className="p-2 text-slate-400 hover:text-white transition-colors"
+                            >
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                {/* Breadcrumbs Navigation */}
+                {(currentFolder || folders.length > 0 || items.length > 0) && (
+                    <div className="px-4 py-2 border-b border-slate-800 bg-slate-900/30">
+                        <div className="flex items-center gap-1 text-sm overflow-x-auto">
+                            <button
+                                onClick={() => navigateToBreadcrumb(-1)}
+                                className={`flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-800 transition-colors ${
+                                    !currentFolder ? 'text-white' : 'text-slate-400'
+                                }`}
+                            >
+                                <Home className="w-4 h-4" />
+                                <span>Root</span>
+                            </button>
+                            {folderPath.map((folder, index) => (
+                                <div key={index} className="flex items-center">
+                                    <ChevronRight className="w-4 h-4 text-slate-600" />
+                                    <button
+                                        onClick={() => navigateToBreadcrumb(index)}
+                                        className={`px-2 py-1 rounded hover:bg-slate-800 transition-colors ${
+                                            index === folderPath.length - 1 ? 'text-white' : 'text-slate-400'
+                                        }`}
+                                    >
+                                        {folder}
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {/* Items Grid */}
                 <div className="flex-1 overflow-y-auto p-3 sm:p-6 scrollbar-hide">
                     {isLoading ? (
                         <div className="flex items-center justify-center py-12">
                             <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
                         </div>
-                    ) : items.length === 0 ? (
+                    ) : folders.length === 0 && items.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-10 sm:py-16">
                             <div className="w-16 sm:w-20 h-16 sm:h-20 rounded-2xl bg-slate-800/80 border border-slate-700/50 flex items-center justify-center mb-4 sm:mb-6">
                                 {EmptyIcon && <EmptyIcon className="w-8 sm:w-10 h-8 sm:h-10 text-slate-500" />}
                             </div>
-                            <p className="text-base sm:text-lg font-medium text-slate-300 mb-2">{config.emptyMessage}</p>
-                            <p className="text-xs sm:text-sm text-slate-500 mb-4 sm:mb-6">{config.emptySubMessage}</p>
-                            <button
-                                onClick={handleUploadClick}
-                                className="flex items-center gap-2 px-4 sm:px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
-                            >
-                                <Upload className="w-4 h-4" />
-                                <span>Upload Files</span>
-                            </button>
+                            <p className="text-base sm:text-lg font-medium text-slate-300 mb-2">
+                                {currentFolder ? 'This folder is empty' : config.emptyMessage}
+                            </p>
+                            <p className="text-xs sm:text-sm text-slate-500 mb-4 sm:mb-6">
+                                {currentFolder ? 'Upload files or create subfolders' : config.emptySubMessage}
+                            </p>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowCreateFolder(true)}
+                                    className="flex items-center gap-2 px-4 sm:px-5 py-2.5 text-sm bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+                                >
+                                    <FolderPlus className="w-4 h-4" />
+                                    <span>New Folder</span>
+                                </button>
+                                <button
+                                    onClick={handleUploadClick}
+                                    className="flex items-center gap-2 px-4 sm:px-5 py-2.5 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
+                                >
+                                    <Upload className="w-4 h-4" />
+                                    <span>Upload Files</span>
+                                </button>
+                            </div>
                         </div>
                     ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-4">
+                            {/* Folders */}
+                            {folders.map((folder) => {
+                                const isSelected = selectedFolderPaths.has(folder.path);
+                                return (
+                                    <div
+                                        key={folder.path}
+                                        className={`relative cursor-pointer rounded-lg border-2 transition-all group ${
+                                            isSelected
+                                                ? 'border-blue-500 bg-blue-500/10'
+                                                : 'border-slate-700 hover:border-slate-500'
+                                        }`}
+                                    >
+                                        <div 
+                                            onClick={() => navigateToFolder(folder)}
+                                            className="aspect-video bg-slate-800 rounded-t-lg flex items-center justify-center relative"
+                                        >
+                                            <Folder className="w-12 h-12 text-amber-500" />
+                                            {/* Selection checkbox for folders when enabled */}
+                                            {allowFolderSelection && (
+                                                <button
+                                                    onClick={(e) => toggleFolderSelection(folder.path, e)}
+                                                    className={`absolute top-2 left-2 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
+                                                        isSelected
+                                                            ? 'bg-blue-500 border-blue-500'
+                                                            : 'bg-slate-900/80 border-slate-500 hover:border-blue-400'
+                                                    }`}
+                                                    title="Select folder for video pool"
+                                                >
+                                                    {isSelected && <span className="text-white text-xs">✓</span>}
+                                                </button>
+                                            )}
+                                        </div>
+                                        <div className="p-2 flex items-center justify-between gap-2">
+                                            <p 
+                                                className="text-xs text-slate-300 truncate flex-1 cursor-pointer" 
+                                                title={folder.name}
+                                                onClick={() => navigateToFolder(folder)}
+                                            >
+                                                {folder.name}
+                                            </p>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (confirm(`Delete folder "${folder.name}" and all its contents?`)) {
+                                                        handleDeleteFolder(folder);
+                                                    }
+                                                }}
+                                                disabled={deletingFolders.has(folder.path)}
+                                                className="flex-shrink-0 p-1 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors disabled:opacity-50 opacity-0 group-hover:opacity-100"
+                                                title="Delete folder"
+                                            >
+                                                {deletingFolders.has(folder.path) ? (
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                ) : (
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                )}
+                                            </button>
+                                        </div>
+                                        {/* Selection indicator */}
+                                        {isSelected && (
+                                            <div className="absolute top-2 right-2 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                                                <span className="text-white text-xs">✓</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                            
+                            {/* Files */}
                             {items.map((item) => (
                                 <div
                                     key={item.id}
@@ -638,28 +1071,51 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
 
                 {/* Footer */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 p-4 sm:p-6 border-t border-slate-800">
-                    <span className="text-sm text-slate-400 text-center sm:text-left">
-                        {selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''} selected
-                    </span>
+                    <div className="text-sm text-slate-400 text-center sm:text-left">
+                        {currentFolder && (
+                            <span className="text-slate-500 mr-2">
+                                📁 {currentFolder.split('/').pop()}
+                            </span>
+                        )}
+                        <span>
+                            {selectedItems.size} item{selectedItems.size !== 1 ? 's' : ''} selected
+                            {selectedFolderPaths.size > 0 && (
+                                <span className="text-blue-400 ml-1">
+                                    + {selectedFolderPaths.size} folder{selectedFolderPaths.size !== 1 ? 's' : ''}
+                                </span>
+                            )}
+                            {folders.length > 0 && !allowFolderSelection && ` • ${folders.length} folder${folders.length !== 1 ? 's' : ''}`}
+                        </span>
+                    </div>
                     <div className="flex gap-2 sm:gap-3">
                         {selectedItems.size > 0 && (
-                            <button
-                                onClick={handleDeleteSelected}
-                                disabled={isDeletingSelected}
-                                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 sm:py-2 text-sm bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {isDeletingSelected ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                        <span className="hidden sm:inline">Deleting...</span>
-                                    </>
-                                ) : (
-                                    <>
-                                        <Trash2 className="w-4 h-4" />
-                                        <span className="hidden sm:inline">Delete</span>
-                                    </>
-                                )}
-                            </button>
+                            <>
+                                <button
+                                    onClick={handleOpenMoveDialog}
+                                    disabled={isMovingFiles}
+                                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 sm:py-2 text-sm bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <FolderInput className="w-4 h-4" />
+                                    <span className="hidden sm:inline">Move</span>
+                                </button>
+                                <button
+                                    onClick={handleDeleteSelected}
+                                    disabled={isDeletingSelected}
+                                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2.5 sm:py-2 text-sm bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isDeletingSelected ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            <span className="hidden sm:inline">Deleting...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Trash2 className="w-4 h-4" />
+                                            <span className="hidden sm:inline">Delete</span>
+                                        </>
+                                    )}
+                                </button>
+                            </>
                         )}
                         <button
                             onClick={onClose}
@@ -669,7 +1125,7 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
                         </button>
                         <button
                             onClick={handleAdd}
-                            disabled={selectedItems.size === 0 || isAddingToTimeline}
+                            disabled={(selectedItems.size === 0 && selectedFolderPaths.size === 0) || isAddingToTimeline}
                             className="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 sm:py-2 text-sm bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 sm:min-w-[140px]"
                         >
                             {isAddingToTimeline ? (
@@ -678,11 +1134,62 @@ export function LibraryModal({ isOpen, onClose, onAddToTimeline, type }: Library
                                     <span>Adding...</span>
                                 </>
                             ) : (
-                                <span>Add to Timeline</span>
+                                <span>{allowFolderSelection ? 'Add to Pool' : 'Add to Timeline'}</span>
                             )}
                         </button>
                     </div>
                 </div>
+
+                {/* Move Dialog */}
+                {showMoveDialog && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center rounded-xl">
+                        <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 w-80 max-h-96 flex flex-col">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-white font-medium">Move to folder</h3>
+                                <button
+                                    onClick={() => setShowMoveDialog(false)}
+                                    className="text-slate-400 hover:text-white"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                            <div className="flex-1 overflow-y-auto space-y-1">
+                                {/* Root option */}
+                                <button
+                                    onClick={() => handleMoveFiles(null)}
+                                    disabled={isMovingFiles || currentFolder === null}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300"
+                                >
+                                    <Home className="w-4 h-4 text-slate-400" />
+                                    <span>Root (no folder)</span>
+                                </button>
+                                {/* Folder options */}
+                                {allFolders.map((folder) => (
+                                    <button
+                                        key={folder.id}
+                                        onClick={() => handleMoveFiles(folder.path)}
+                                        disabled={isMovingFiles || folder.path === currentFolder}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left rounded-lg hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300"
+                                    >
+                                        <Folder className="w-4 h-4 text-amber-500" />
+                                        <span className="truncate">{folder.path}</span>
+                                    </button>
+                                ))}
+                                {allFolders.length === 0 && (
+                                    <p className="text-sm text-slate-500 text-center py-4">
+                                        No folders created yet
+                                    </p>
+                                )}
+                            </div>
+                            {isMovingFiles && (
+                                <div className="flex items-center justify-center gap-2 mt-4 text-sm text-slate-400">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    <span>Moving files...</span>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -697,4 +1204,8 @@ export function MediaLibraryModal(props: Omit<LibraryModalProps, 'type'>) {
 
 export function AudioLibraryModal(props: Omit<LibraryModalProps, 'type'>) {
     return <LibraryModal {...props} type="audio" />;
+}
+
+export function ImageLibraryModal(props: Omit<LibraryModalProps, 'type'>) {
+    return <LibraryModal {...props} type="image" />;
 }

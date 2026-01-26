@@ -4,6 +4,7 @@ import { useAppSelector } from "@/app/store";
 import { useRef, useEffect, useState, useCallback } from "react";
 import { setIsPlaying, setCurrentTime } from "@/app/store/slices/projectSlice";
 import { useDispatch } from "react-redux";
+import CanvasOverlay from "../CanvasOverlay";
 
 const fps = 30;
 
@@ -177,11 +178,11 @@ export const PreviewPlayer = ({ isMobile = false }: PreviewPlayerProps) => {
             {/* Player sized to fit within container while maintaining 9:16 aspect ratio */}
             {playerSize.width > 0 && playerSize.height > 0 && (
                 <div 
+                    className={`relative ${isMobile ? 'rounded-lg overflow-hidden shadow-2xl' : ''}`}
                     style={{ 
                         width: playerSize.width,
                         height: playerSize.height
                     }}
-                    className={isMobile ? 'rounded-lg overflow-hidden shadow-2xl' : ''}
                 >
                     <Player
                         ref={playerRef}
@@ -198,6 +199,15 @@ export const PreviewPlayer = ({ isMobile = false }: PreviewPlayerProps) => {
                         controls={!isMobile}
                         clickToPlay={false}
                     />
+                    {/* Canvas overlay for dragging/resizing elements */}
+                    {!isMobile && (
+                        <CanvasOverlay
+                            playerWidth={playerSize.width}
+                            playerHeight={playerSize.height}
+                            canvasWidth={1080}
+                            canvasHeight={1920}
+                        />
+                    )}
                 </div>
             )}
         </div>
