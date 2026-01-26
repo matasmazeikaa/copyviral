@@ -154,7 +154,7 @@ export default function TestRenderPage() {
 
                     {allJobs.length === 0 ? (
                         <div className="text-center py-8 text-slate-500">
-                            No render jobs yet. Click "Start Test Render" to begin.
+                            No render jobs yet. Click &quot;Start Test Render&quot; to begin.
                         </div>
                     ) : (
                         <div className="space-y-3">

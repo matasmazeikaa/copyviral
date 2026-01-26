@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useAppSelector, useAppDispatch } from "@/app/store";
 import { setMediaFiles, setTextElements } from "@/app/store/slices/projectSlice";
 import { MediaFile, TextElement } from "@/app/types";
-import GenerateVideoButton from "./render/GenerateVideoButton";
+import GenerateVideoButton from "./render/gst";
 import { calculateVideoFit } from "@/app/utils/videoDimensions";
 import MediaProperties from "./PropertiesSection/MediaProperties";
 import { Layers } from "lucide-react";
