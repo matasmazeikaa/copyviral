@@ -98,9 +98,9 @@ aws lambda create-function \
   --zip-file fileb://function.zip \
   --environment "Variables={
     AWS_REGION=us-east-1,
-    SUPABASE_URL=https://ubmehaomchkmufzoagaa.supabase.co,
-    SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVibWVoYW9tY2hrbXVmem9hZ2FhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzY4MjA0MywiZXhwIjoyMDc5MjU4MDQzfQ.K9dmHd3BF8U2qP4v33A2qNIAbdp_lKONGseB2eQNxbU,
-    FONT_BASE_URL=https://app.copyviral.com/fonts
+    SUPABASE_URL=https://your-project.supabase.co,
+    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key,
+    FONT_BASE_URL=https://your-app.com/fonts
   }"
 
 # Or update existing function
